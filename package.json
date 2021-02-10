@@ -1,0 +1,27 @@
+{
+  "name": "earthstar-graph-db",
+  "version": "0.0.1",
+  "description": "A graph database layer on top of Earthstar.",
+  "main": "index.js",
+  "repository": "git@github.com:earthstar-project/earthstar-graph-db.git",
+  "author": "Cinnamon <cinnamon_bun_github@fastmail.com>",
+  "license": "MIT",
+  "scripts": {
+    "clean": "rm -rf build coverage .nyc_output",
+    "build": "tsc",
+    "start": "node build/index.js",
+    "test": "tap -Rspecy --jobs=1 build/test/*.test.js",
+    "test-coverage": "npm test -- --coverage-report=lcov",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^14.14.25",
+    "@types/tap": "^14.10.2",
+    "tap": "^14.11.0",
+    "typescript": "^4.1.4"
+  },
+  "dependencies": {
+    "chalk": "^4.1.0",
+    "earthstar": "^5.7.6"
+  }
+}
