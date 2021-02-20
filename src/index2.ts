@@ -64,8 +64,8 @@ and there can only be one edge with those 4 particular properties.
 // Specify each of these options to narrow down your query.
 // If no options are set at all, this returns all edges in the workspace.
 export interface GraphQuery {
-    source?: Path,
-    dest?: Path,
+    source?: string,
+    dest?: string,
     owner?: AuthorAddress | 'common',
     kind?: string,
 }
@@ -75,7 +75,7 @@ export interface EdgeContent {
     source: string,
     dest: string,
     kind: string,
-    data?: any;
+    data?: any;  // any user-provided data about this edge
 }
 
 
@@ -280,4 +280,8 @@ export let findEdgesAsync = async (storage: IStorage | IStorageAsync, graphQuery
     return docs;
 }
 
+
+//================================================================================
+
+// TODO: functions for writing edges
 
