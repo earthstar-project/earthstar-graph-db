@@ -22,6 +22,6 @@
   },
   "dependencies": {
     "chalk": "^4.1.0",
-    "earthstar": "^5.7.6"
+    "earthstar": "^6.2.1"
   }
 }
