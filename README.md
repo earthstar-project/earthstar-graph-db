@@ -2,7 +2,7 @@
 
 **In progress!**
 
-This will be a graph database stored in Earthstar.
+This will be a graph database stored in Earthstar.  It's really just a thin layer on top of Earthstar Storages for writing and querying documents.
 
 All edges are directional and have a built-in "kind" property as well as arbitrary user-settable data.
 
