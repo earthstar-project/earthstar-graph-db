@@ -51,7 +51,7 @@ Each edge is an Earthstar document with a path like (spaces added for readabilit
 / graphdb-v1 / edge / source:SOURCE_HASH / owner:OWNER / kind:EDGE_KIND / dest:DEST_HASH.json
 ```
 
-We hash the source and dest strings to shorten them and remove punctuation that would interfere with the Earthstar path.,
+We hash the source and dest strings to shorten them and remove punctuation that would interfere with the Earthstar path.
 
 Each edge document holds this content:
 ```ts
