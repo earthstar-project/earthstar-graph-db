@@ -53,7 +53,7 @@ Each edge is an Earthstar document with a path like (spaces added for readabilit
 
 We hash the source and dest strings to shorten them and remove punctuation that would interfere with the Earthstar path.
 
-Each edge document holds this content:
+Each edge document holds this content encoded as JSON:
 ```ts
 interface EdgeContent {
     source: string,

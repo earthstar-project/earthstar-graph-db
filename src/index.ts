@@ -4,17 +4,17 @@ import {
     DocToSet,
     Document,
     IStorage,
+    IStorageAsync,
     Path,
     Query,
     QueryForForget,
     ValidationError,
+    ValidatorEs4,
     WriteResult,
     documentIsExpired,
-    sha256base32,
-    ValidatorEs4,
     isErr,
     queryMatchesDoc,
-    IStorageAsync,
+    sha256base32,
 } from 'earthstar';
 
 //================================================================================
@@ -59,6 +59,7 @@ and there can only be one edge with those 4 particular properties.
 //    total path length = 214 + length of EDGE_KIND
 //    The earthstar path length limit is 512 characters, so we have plenty of room
 
+const PATH_PREFIX: string = '/graphdb-v1/edge'
 
 // You look up edges with GraphQuery objects.
 // Specify each of these options to narrow down your query.
@@ -74,6 +75,7 @@ export interface GraphQuery {
 export interface EdgeContent {
     source: string,
     dest: string,
+    owner: string,
     kind: string,
     data?: any;  // any user-provided data about this edge
 }
@@ -140,7 +142,6 @@ export let _transformGraphQuery = (graphQuery: GraphQuery, extraEarthstarQuery?:
     let partsPattern = parts.map(x => x === '*' ? '*' : '-').join();
 
     let esQuery: Query = {};
-    let basePrefix: string = '/graphdb-v1/edge'
 
     // Some combinations can't be done just with pathStartsWith and pathEndsWith.
     // These require an extra filtering step at the end.
@@ -156,34 +157,34 @@ export let _transformGraphQuery = (graphQuery: GraphQuery, extraEarthstarQuery?:
         // "get the one edge from source to dest, with given owner and kind"
         // this is fast!
         esQuery = {
-            path: `${basePrefix}/source:${sourceHash}/owner:${owner}/kind:${kind}/destPath:${destHash}.json`
+            path: `${PATH_PREFIX}/source:${sourceHash}/owner:${owner}/kind:${kind}/destPath:${destHash}.json`
         }
     } else if (partsPattern === '---*') {  // 1
         // dest is not specified
         // "get all outgoing nodes from a path, with given owner and kind"
         esQuery = {
-            pathStartsWith: `${basePrefix}/source:${sourceHash}/owner:${owner}/kind:${kind}/`,
+            pathStartsWith: `${PATH_PREFIX}/source:${sourceHash}/owner:${owner}/kind:${kind}/`,
             pathEndsWith: `.json`,
         }
     } else if (partsPattern === '--*-') {  // 2
         // kind is not specified
         // get all edges between source and dest, with the given owner"
         esQuery = {
-            pathStartsWith: `${basePrefix}/source:${sourceHash}/owner:${owner}/`,
+            pathStartsWith: `${PATH_PREFIX}/source:${sourceHash}/owner:${owner}/`,
             pathEndsWith: `/${destHash}.json`,
         }
     } else if (partsPattern === '--**') {  // 3
         // kind, dest is not specified
         // "get all outgoing nodes from a path, with given owner and any kind"
         esQuery = {
-            pathStartsWith: `${basePrefix}/source:${sourceHash}/owner:${owner}/`,
+            pathStartsWith: `${PATH_PREFIX}/source:${sourceHash}/owner:${owner}/`,
             pathEndsWith: `.json`,
         }
     } else if (partsPattern === '-*--') {  // 4
         // owner is not specified
         // "get all edges between source and dest, with any owner, for the given kind"
         esQuery = {
-            pathStartsWith: `${basePrefix}/source:${sourceHash}/`,
+            pathStartsWith: `${PATH_PREFIX}/source:${sourceHash}/`,
             pathEndsWith: `/kind:${kind}/${destHash}.json`,
         }
     } else if (partsPattern === '-*-*') {  // 5
@@ -192,7 +193,7 @@ export let _transformGraphQuery = (graphQuery: GraphQuery, extraEarthstarQuery?:
         // "get all outgoing edges from source node, of a certain kind"
         // this is slow
         esQuery = {
-            pathStartsWith: `${basePrefix}/source:${sourceHash}/`,
+            pathStartsWith: `${PATH_PREFIX}/source:${sourceHash}/`,
             pathEndsWith: `.json`,
         }
         finalFilter = (path) =>
@@ -202,14 +203,14 @@ export let _transformGraphQuery = (graphQuery: GraphQuery, extraEarthstarQuery?:
         // owner and kind are not
         // "get all edges between source and dest"
         esQuery = {
-            pathStartsWith: `${basePrefix}/source:${sourceHash}/`,
+            pathStartsWith: `${PATH_PREFIX}/source:${sourceHash}/`,
             pathEndsWith: `/dest:${destHash}.json`,
         }
     } else if (partsPattern === '-***') {  // 7
         // only source is specified
         // "get all outgoing edges from a path"
         esQuery = {
-            pathStartsWith: `${basePrefix}/source:${sourceHash}/`,
+            pathStartsWith: `${PATH_PREFIX}/source:${sourceHash}/`,
             pathEndsWith: `.json`,
         }
     } else if (partsPattern === '*---') {  // 8
@@ -230,7 +231,7 @@ export let _transformGraphQuery = (graphQuery: GraphQuery, extraEarthstarQuery?:
         // no constraints at all, empty graph query.
         // "get all edges"
         esQuery = {
-            pathStartsWith: `${basePrefix}/`,
+            pathStartsWith: `${PATH_PREFIX}/`,
             pathEndsWith: `.json`,
         }
     } else {
@@ -282,6 +283,19 @@ export let findEdgesAsync = async (storage: IStorage | IStorageAsync, graphQuery
 
 
 //================================================================================
+// WRITING EDGES
 
-// TODO: functions for writing edges
+export let addEdge = async (storage: IStorage | IStorageAsync, authorKeypair: AuthorKeypair, edge: EdgeContent): Promise<ValidationError | WriteResult> => {
+    let sourceHash = sha256base32(edge.source);
+    let destHash = sha256base32(edge.dest);
+    let ownerWithTilde = edge.owner === 'common' ? 'common' : '~' + edge.owner;
+    let path = `${PATH_PREFIX}/source:${sourceHash}/owner:${ownerWithTilde}/kind:${edge.kind}/destPath:${destHash}.json`
+    let docToSet: DocToSet = {
+        format: 'es.4',
+        path: path,
+        content: JSON.stringify(edge),
+    };
+    let setResult = await storage.set(authorKeypair, docToSet);
+    return setResult;
+}
 
