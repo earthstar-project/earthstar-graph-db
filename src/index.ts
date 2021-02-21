@@ -80,7 +80,6 @@ export interface EdgeContent {
     data?: any;  // any user-provided data about this edge
 }
 
-
 // We're going to transform the graph query into an earthstar query,
 //  along with an optional filter function to run on the results.
 
@@ -285,7 +284,8 @@ export let findEdgesAsync = async (storage: IStorage | IStorageAsync, graphQuery
 //================================================================================
 // WRITING EDGES
 
-export let addEdge = async (storage: IStorage | IStorageAsync, authorKeypair: AuthorKeypair, edge: EdgeContent): Promise<ValidationError | WriteResult> => {
+// create or overwrite an edge.
+export let writeEdge = async (storage: IStorage | IStorageAsync, authorKeypair: AuthorKeypair, edge: EdgeContent): Promise<ValidationError | WriteResult> => {
     let sourceHash = sha256base32(edge.source);
     let destHash = sha256base32(edge.dest);
     let ownerWithTilde = edge.owner === 'common' ? 'common' : '~' + edge.owner;
@@ -299,3 +299,4 @@ export let addEdge = async (storage: IStorage | IStorageAsync, authorKeypair: Au
     return setResult;
 }
 
+// TODO: deleteEdge

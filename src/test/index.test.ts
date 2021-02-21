@@ -13,7 +13,7 @@ import {
     EdgeContent,
     GraphQuery,
     _transformGraphQuery,
-    addEdge,
+    writeEdge,
     findEdges,
     findEdgesAsync,
 } from '../index';
@@ -46,21 +46,27 @@ source   owner:kind   dest
  
  7 /blog/post/123.md   @onee:LINKED_TO   http://www.example.com
  
+// a bidirectional link from both sides:
+
  8 /wiki/cats.md     common:LINKED_TO  /wiki/kittens.md
  9 /wiki/kittens.md  common:LINKED_TO  /wiki/cats.md
 
-// TODO: a non-directed edge:
+// a single non-directed link:
 
 10 @onee   -IS_SAME_PERSON_AS-   @twoo
 
 */
 
+let blogPath = '/blog/post/123.md';
+let commentPath = '/blog/comment/456.md';
+let externalUrl = 'http://www.example.com';
+let wikiPath1 = '/wiki/cats.md';
+let wikiPath2 = '/wiki/kittens.md';
+
 let addTestData = async (storage: IStorage): Promise<void> => {
-    let blogPath = '/blog/post/123.md';
-    let commentPath = '/blog/comment/456.md';
 
     // 1
-    await addEdge(storage, keypair1, {
+    await writeEdge(storage, keypair1, {
         source: author1,
         kind: 'FOLLOWED',
         dest: author2,
@@ -68,7 +74,7 @@ let addTestData = async (storage: IStorage): Promise<void> => {
     });
 
     // 2
-    await addEdge(storage, keypair1, {
+    await writeEdge(storage, keypair1, {
         source: author1,
         kind: 'AUTHORED',
         dest: blogPath,
@@ -76,18 +82,77 @@ let addTestData = async (storage: IStorage): Promise<void> => {
     });
 
     // 3
-    await addEdge(storage, keypair2, {
+    await writeEdge(storage, keypair2, {
         source: author2,
         kind: 'LIKED',
         dest: blogPath,
         owner: author2,
+    });
+     
+    // 4
+    await writeEdge(storage, keypair2, {
+        source: author2,
+        kind: 'REACTED',
+        dest: blogPath,
+        owner: author2,
+        data: { reaction: ':)' },
+    });
+
+    // 5
+    await writeEdge(storage, keypair2, {
+        source: author2,
+        kind: 'AUTHORED',
+        dest: commentPath,
+        owner: author2,
+    });
+
+    // 6
+    await writeEdge(storage, keypair2, {
+        source: commentPath,
+        kind: 'COMMENTS_ON',
+        dest: blogPath,
+        owner: author2,
+    });
+
+    // 7
+    await writeEdge(storage, keypair2, {
+        source: blogPath,
+        kind: 'LINKED_TO',
+        dest: externalUrl,
+        owner: author1,
+    });
+
+    // 8 bidirectional link from both sides:
+    await writeEdge(storage, keypair2, {
+        source: wikiPath1,
+        kind: 'LINKED_TO',
+        dest: wikiPath2,
+        owner: 'common',
+    });
+
+    // 9 bidirectional link from both sides:
+    await writeEdge(storage, keypair2, {
+        source: wikiPath2,
+        kind: 'LINKED_TO',
+        dest: wikiPath1,
+        owner: 'common',
+    });
+
+    // 10 a single non-directed link
+    let nodes = [author1, author2];
+    nodes.sort();
+    await writeEdge(storage, keypair2, {
+        source: nodes[0],  // smaller first, for consistency
+        kind: '-IS_SAME_PERSON_AS-',
+        dest: nodes[1],
+        owner: author1,
     });
 }
 
 t.test('keypair permissions', async (t: any) => {
     let storage = new StorageMemory([ValidatorEs4], workspace);
 
-    let result = await addEdge(storage, keypair1, {
+    let result = await writeEdge(storage, keypair1, {
         source: 'aaa',
         kind: 'LIKED',
         dest: 'bbb',
@@ -96,7 +161,7 @@ t.test('keypair permissions', async (t: any) => {
     t.true(result instanceof ValidationError, 'should not be able to do earthstar write with keypair 1 but edge owner 2 - should cause a ValidationError');
 
     // write to a common edge
-    let result2 = await addEdge(storage, keypair1, {
+    let result2 = await writeEdge(storage, keypair1, {
         source: 'aaa',
         kind: 'LIKED',
         dest: 'bbb',
@@ -109,7 +174,7 @@ t.test('keypair permissions', async (t: any) => {
     }
 
     // overwrite a common edge with a different author
-    let result3 = await addEdge(storage, keypair2, {
+    let result3 = await writeEdge(storage, keypair2, {
         source: 'aaa',
         kind: 'LIKED',
         dest: 'bbb',
@@ -137,3 +202,7 @@ t.test('basics', async (t: any) => {
     storage.close();
     t.done();
 });
+
+// TODO: _transformGraphQuery
+// TODO: actually querying
+// TODO: deleting edges
