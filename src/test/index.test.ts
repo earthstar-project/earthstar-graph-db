@@ -53,7 +53,7 @@ source   owner:kind   dest
 
 // a single non-directed link:
 
-10 @onee   -IS_SAME_PERSON_AS-   @twoo
+10 @onee   @onee:-IS_SAME_PERSON_AS-   @twoo
 
 */
 
@@ -115,7 +115,7 @@ let addTestData = async (storage: IStorage): Promise<void> => {
     });
 
     // 7
-    await writeEdge(storage, keypair2, {
+    await writeEdge(storage, keypair1, {
         source: blogPath,
         kind: 'LINKED_TO',
         dest: externalUrl,
@@ -141,7 +141,7 @@ let addTestData = async (storage: IStorage): Promise<void> => {
     // 10 a single non-directed link
     let nodes = [author1, author2];
     nodes.sort();
-    await writeEdge(storage, keypair2, {
+    await writeEdge(storage, keypair1, {
         source: nodes[0],  // smaller first, for consistency
         kind: '-IS_SAME_PERSON_AS-',
         dest: nodes[1],
@@ -158,7 +158,7 @@ t.test('keypair permissions', async (t: any) => {
         dest: 'bbb',
         owner: author2,  // does not match keypair1 above
     });
-    t.true(result instanceof ValidationError, 'should not be able to do earthstar write with keypair 1 but edge owner 2 - should cause a ValidationError');
+    t.true(result instanceof ValidationError, 'should return ValidationError when doing earthstar write with keypair 1 but edge owner 2');
 
     // write to a common edge
     let result2 = await writeEdge(storage, keypair1, {
@@ -195,9 +195,12 @@ t.test('basics', async (t: any) => {
 
     await addTestData(storage);
 
-    for (let d of await storage.documents()) {
-        log(d);
-    }
+    let paths = await storage.paths();
+    //for (let path of paths) { log(path); }
+    t.same(paths.length, 10, 'expected number of edges in test data; all were written successfully');
+    //for (let d of await storage.documents()) {
+    //    log(d);
+    //}
 
     storage.close();
     t.done();

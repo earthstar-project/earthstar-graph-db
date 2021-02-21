@@ -296,6 +296,9 @@ export let writeEdge = async (storage: IStorage | IStorageAsync, authorKeypair: 
         content: JSON.stringify(edge),
     };
     let setResult = await storage.set(authorKeypair, docToSet);
+    //if (setResult !== WriteResult.Accepted) {
+    //    console.warn(setResult);
+    //}
     return setResult;
 }
 
