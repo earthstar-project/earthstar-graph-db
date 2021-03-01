@@ -94,10 +94,20 @@ let escapeRegExp = (s: string) => {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 }
 
-export let globToEarthstarQuery = (glob: string): { query: Query, filterFn: any } => {
+export let globToEarthstarQueryAndPathRegex = (glob: string): { query: Query, pathRegex: string | null } => {
+    // Given a glob string,
+    // return an earthstar Query
+    // and a regular expression (as a plain string, not a RegExp instance).
+    // After this you can run the query yourself and apply the regex
+    // as a filter to the paths of the resulting documents,
+    // to get only the documents whose paths match the glob.
+    // The regex will be null if it's not needed.
+    // The glob string only supports '*' as a wildcard, no other
+    // special wildcards like '?' or '**' as in Bash.
+
     let parts = glob.split('*');
     let query: Query = {};
-    let filterFn = null;
+    let pathRegex = null;
 
     if (parts.length === 1) {
         query = { path: glob };
@@ -105,13 +115,10 @@ export let globToEarthstarQuery = (glob: string): { query: Query, filterFn: any 
         query = { pathStartsWith: parts[0], pathEndsWith: parts[1] };
     } else {
         query = { pathStartsWith: parts[0], pathEndsWith: parts[parts.length - 1] };
-        let regexStr = '^' + parts.map(escapeRegExp).join('.*') + '$';
-        console.log(regexStr);
-        let re = new RegExp(regexStr);
-        let filterFn = (doc: Document) => {re.test(doc.path)};
+        pathRegex = '^' + parts.map(escapeRegExp).join('.*') + '$';
     }
 
-    return { query, filterFn };
+    return { query, pathRegex };
 }
 
 export let _transformGraphQuery = (graphQuery: GraphQuery, extraEarthstarQuery?: Query): TransformedGraphQuery | ValidationError => {

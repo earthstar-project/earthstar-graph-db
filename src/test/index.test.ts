@@ -2,12 +2,14 @@ import {
     AuthorKeypair,
     IStorage,
     IStorageAsync,
+    Query,
     StorageMemory,
     ValidationError,
     ValidatorEs4,
     WriteResult,
     generateAuthorKeypair,
     isErr,
+    stringLengthInBytes,
 } from 'earthstar';
 import {
     EdgeContent,
@@ -16,7 +18,7 @@ import {
     writeEdge,
     findEdges,
     findEdgesAsync,
-    globToEarthstarQuery,
+    globToEarthstarQueryAndPathRegex,
 } from '../index';
 
 import t = require('tap');
@@ -89,7 +91,7 @@ let addTestData = async (storage: IStorage): Promise<void> => {
         dest: blogPath,
         owner: author2,
     });
-     
+
     // 4
     await writeEdge(storage, keypair2, {
         source: author2,
@@ -195,7 +197,6 @@ t.test('basics', async (t: any) => {
     let storage = new StorageMemory([ValidatorEs4], workspace);
 
     await addTestData(storage);
-
     let paths = await storage.paths();
     //for (let path of paths) { log(path); }
     t.same(paths.length, 10, 'expected number of edges in test data; all were written successfully');
@@ -208,8 +209,84 @@ t.test('basics', async (t: any) => {
 });
 
 t.test('glob', async (t: any) => {
-    let { query, filterFn } = globToEarthstarQuery('/graph/source:*/kind:*/dest:*.json');
-    console.log(query);
+    interface Vector {
+        glob: string,
+        query: Query,
+        regex: string | null,
+        matchingPaths: string[],
+        otherPaths: string[],
+    };
+    let vectors: Vector[] = [
+        {
+            glob: '/a',
+            query: { path: '/a' },
+            regex: null,
+            matchingPaths: ['/a'],
+            otherPaths: ['/', 'a', '/b', 'x/a', '/ax'],
+        },
+        {
+            glob: '/a*b',
+            query: { pathStartsWith: '/a', pathEndsWith: 'b' },
+            regex: null,
+            matchingPaths: '/ab /azzzb'.split(' '),
+            otherPaths: '/a /b x/ab /abx'.split(' '),
+        },
+        {
+            glob: '/a*b*c',
+            query: { pathStartsWith: '/a', pathEndsWith: 'c' },
+            regex: '^/a.*b.*c$',
+            matchingPaths: [
+                '/abc',
+                '/abxxc',
+                '/axxxbxxc',
+            ],
+            otherPaths: [
+                '/acb',
+                'x/abc',
+                '/abcx',
+                '/ac',
+                '/axc',
+            ],
+        },
+        {
+            glob: '/a:*/b:*/c:*.json',
+            query: { pathStartsWith: '/a:', pathEndsWith: '.json' },
+            regex: '^/a:.*/b:.*/c:.*\\.json$',
+            matchingPaths: [
+                '/a:1/b:2/c:3.json',
+                '/a:/b:/c:.json',
+                '/a:1/b:2/x:99/c:3.json',
+            ],
+            otherPaths: [
+                '/a:1/b:2/c:3xjson',
+                '/a/b/c.json',
+                '/a:/b/c:.json',
+                '/a:xxxx.json',
+                'x/a:1/b:2/c:3.jsonx',
+            ],
+        }
+    ];
+
+    for (let { glob, query, regex, matchingPaths, otherPaths } of vectors) {
+        let result = globToEarthstarQueryAndPathRegex(glob);
+        console.log('---');
+        console.log(JSON.stringify({
+            glob: glob,
+            result: result,
+        }, null, 4));
+        t.same(query, result.query, 'query is as expected: ' + glob);
+        t.same(regex, result.pathRegex, 'regex is as expected: ' + glob);
+        if (regex != null) {
+            let re = new RegExp(regex);
+            for (let match of matchingPaths) {
+                t.true(re.test(match), 'regex should match: ' + match);
+            }
+            for (let nonMatch of otherPaths) {
+                t.false(re.test(nonMatch), 'regex should not match: ' + nonMatch);
+            }
+        }
+    }
+
     t.done();
 });
 
