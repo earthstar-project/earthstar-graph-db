@@ -16,6 +16,7 @@ import {
     writeEdge,
     findEdges,
     findEdgesAsync,
+    globToEarthstarQuery,
 } from '../index';
 
 import t = require('tap');
@@ -203,6 +204,12 @@ t.test('basics', async (t: any) => {
     //}
 
     storage.close();
+    t.done();
+});
+
+t.test('glob', async (t: any) => {
+    let { query, filterFn } = globToEarthstarQuery('/graph/source:*/kind:*/dest:*.json');
+    console.log(query);
     t.done();
 });
 

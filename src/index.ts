@@ -89,6 +89,31 @@ interface TransformedGraphQuery {
     finalFilter: null | FinalFilter,
 }
 
+// escape a string so it's safe to use in a regular expression
+let escapeRegExp = (s: string) => {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
+}
+
+export let globToEarthstarQuery = (glob: string): { query: Query, filterFn: any } => {
+    let parts = glob.split('*');
+    let query: Query = {};
+    let filterFn = null;
+
+    if (parts.length === 1) {
+        query = { path: glob };
+    } else if (parts.length === 2) {
+        query = { pathStartsWith: parts[0], pathEndsWith: parts[1] };
+    } else {
+        query = { pathStartsWith: parts[0], pathEndsWith: parts[parts.length - 1] };
+        let regexStr = '^' + parts.map(escapeRegExp).join('.*') + '$';
+        console.log(regexStr);
+        let re = new RegExp(regexStr);
+        let filterFn = (doc: Document) => {re.test(doc.path)};
+    }
+
+    return { query, filterFn };
+}
+
 export let _transformGraphQuery = (graphQuery: GraphQuery, extraEarthstarQuery?: Query): TransformedGraphQuery | ValidationError => {
     // Transform the graphQuery into an Earthstar query.
     // If extraEarthstarQuery is provided, it's mixed in too.  You can use it to provide
