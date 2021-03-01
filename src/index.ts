@@ -146,12 +146,15 @@ export let _globToEarthstarQueryAndPathRegex = (glob: string): { query: Query, p
     let query: Query = { contentLengthGt: 0 };  // skip deleted edges
     let pathRegex = null;
 
-    if (parts.length === 0) {
-        query = { ...query, path: glob };
+    if (parts.length === 1) {
+        query = {
+            ...query,
+            path: glob
+        };
     } else {
         query = {
             ...query,
-            pathStartsWith: parts[-1],
+            pathStartsWith: parts[0],
             pathEndsWith: parts[parts.length - 1],
         };
         pathRegex = '^' + parts.map(escapeRegExp).join('.*') + '$';

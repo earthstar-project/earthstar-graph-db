@@ -214,126 +214,123 @@ t.test('writeEdge: keypair permissions', async (t: any) => {
 
 t.test('validateGraphQuery', async (t: any) => {
     interface Vector {
-        query: GraphQuery,
+        graphQuery: GraphQuery,
         shouldBeValid: boolean,
     };
     let vectors: Vector[] = [
-        { shouldBeValid: true,  query: {}},
+        { shouldBeValid: true,  graphQuery: {}},
 
-        { shouldBeValid: true,  query: { owner: 'common'}},
-        { shouldBeValid: true,  query: { owner: author1}},
-        { shouldBeValid: false, query: { owner: '~' + author1}},
-        { shouldBeValid: false, query: { owner: '@fooo'}},
+        { shouldBeValid: true,  graphQuery: { owner: 'common'}},
+        { shouldBeValid: true,  graphQuery: { owner: author1}},
+        { shouldBeValid: false, graphQuery: { owner: '~' + author1}},
+        { shouldBeValid: false, graphQuery: { owner: '@fooo'}},
 
-        { shouldBeValid: true,  query: { kind: 'foo'}},
-        { shouldBeValid: false, query: { kind: '/'}},
-        { shouldBeValid: false, query: { kind: '*'}},
-        { shouldBeValid: false, query: { kind: '?'}},
-        { shouldBeValid: false, query: { kind: 'foo bar'}},
+        { shouldBeValid: true,  graphQuery: { kind: 'foo'}},
+        { shouldBeValid: false, graphQuery: { kind: '/'}},
+        { shouldBeValid: false, graphQuery: { kind: '*'}},
+        { shouldBeValid: false, graphQuery: { kind: '?'}},
+        { shouldBeValid: false, graphQuery: { kind: 'foo bar'}},
     ];
-    for (let { query, shouldBeValid } of vectors) {
-        let err = validateGraphQuery(query);
-        t.same(notErr(err), shouldBeValid, `should${shouldBeValid ? '' : ' not'} be valid: ${JSON.stringify(query)}`);
+    for (let { graphQuery, shouldBeValid } of vectors) {
+        let err = validateGraphQuery(graphQuery);
+        t.same(notErr(err), shouldBeValid, `should${shouldBeValid ? '' : ' not'} be valid: ${JSON.stringify(graphQuery)}`);
     }
     t.done();
 });
 
 t.test('_graphQueryToGlob', async (t: any) => {
     interface Vector {
-        query: GraphQuery,
+        graphQuery: GraphQuery,
         glob: string,
     };
-    let PATH_PREFIX
     let vectors: Vector[] = [
-        { query: {}, glob: `${GRAPH_PATH_PREFIX}/source:*/owner:*/kind:*/dest:*.json` },
-        { query: {owner: 'common'}, glob: `${GRAPH_PATH_PREFIX}/source:*/owner:common/kind:*/dest:*.json` },
-        { query: {owner: author1}, glob: `${GRAPH_PATH_PREFIX}/source:*/owner:~${author1}/kind:*/dest:*.json` },
-        { query: {kind: 'foo'}, glob: `${GRAPH_PATH_PREFIX}/source:*/owner:*/kind:foo/dest:*.json` },
-        { query: {source: 'a'}, glob: `${GRAPH_PATH_PREFIX}/source:${sha256base32('a')}/owner:*/kind:*/dest:*.json` },
-        { query: {dest: 'a'}, glob: `${GRAPH_PATH_PREFIX}/source:*/owner:*/kind:*/dest:${sha256base32('a')}.json` },
+        { graphQuery: {}, glob: `${GRAPH_PATH_PREFIX}/source:*/owner:*/kind:*/dest:*.json` },
+        { graphQuery: {owner: 'common'}, glob: `${GRAPH_PATH_PREFIX}/source:*/owner:common/kind:*/dest:*.json` },
+        { graphQuery: {owner: author1}, glob: `${GRAPH_PATH_PREFIX}/source:*/owner:~${author1}/kind:*/dest:*.json` },
+        { graphQuery: {kind: 'foo'}, glob: `${GRAPH_PATH_PREFIX}/source:*/owner:*/kind:foo/dest:*.json` },
+        { graphQuery: {source: 'a'}, glob: `${GRAPH_PATH_PREFIX}/source:${sha256base32('a')}/owner:*/kind:*/dest:*.json` },
+        { graphQuery: {dest: 'a'}, glob: `${GRAPH_PATH_PREFIX}/source:*/owner:*/kind:*/dest:${sha256base32('a')}.json` },
     ];
-    for (let { query, glob } of vectors) {
-        let returnedGlob = _graphQueryToGlob(query);
-        t.same(returnedGlob, glob, `glob should match for query ${JSON.stringify(query)}`);
+    for (let { graphQuery, glob } of vectors) {
+        let returnedGlob = _graphQueryToGlob(graphQuery);
+        t.same(returnedGlob, glob, `glob should match for graphQuery ${JSON.stringify(graphQuery)}`);
     }
     t.done();
 });
 
-t.skip('glob', async (t: any) => {
+t.test('_globToEarthstarQueryAndPathRegex', async (t: any) => {
     interface Vector {
         glob: string,
-        query: Query,
-        regex: string | null,
+        esQuery: Query,
+        pathRegex: string | null,
         matchingPaths: string[],
-        otherPaths: string[],
+        nonMatchingPaths: string[],
     };
     let vectors: Vector[] = [
         {
+            // if there's no asterisks...
             glob: '/a',
-            query: { path: '/a' },
-            regex: null,
+            esQuery: { path: '/a', contentLengthGt: 0, },  // exact path, not startsWith and endsWith
+            pathRegex: null,  // no regex is needed
             matchingPaths: ['/a'],
-            otherPaths: ['/', 'a', '/b', 'x/a', '/ax'],
+            nonMatchingPaths: ['/', 'a', '/b', '-/a', '/a-'],
         },
         {
-            glob: '/a*b',
-            query: { pathStartsWith: '/a', pathEndsWith: 'b' },
-            regex: null,
-            matchingPaths: '/ab /azzzb'.split(' '),
-            otherPaths: '/a /b x/ab /abx'.split(' '),
-        },
-        {
-            glob: '/a*b*c',
-            query: { pathStartsWith: '/a', pathEndsWith: 'c' },
-            regex: '^/a.*b.*c$',
+            glob: '/a*a.txt',
+            esQuery: { pathStartsWith: '/a', pathEndsWith: 'a.txt', contentLengthGt: 0, },
+            pathRegex: '^/a.*a\\.txt$',
             matchingPaths: [
-                '/abc',
-                '/abxxc',
-                '/axxxbxxc',
+                '/aa.txt',
+                '/a/a.txt',
+                '/aaaa.txt',
+                '/aa/aa.txt',
+                '/a-----a.txt',
             ],
-            otherPaths: [
-                '/acb',
-                'x/abc',
-                '/abcx',
-                '/ac',
-                '/axc',
+            nonMatchingPaths: [
+                '/a.txt',  // the prefix and suffix should not be able to overlap
+                '/aa-txt',  // the dot should not become a wildcard
+                '-/aa.txt',  // no extra stuff at beginning
+                '/aa.txt-',  // no extra stuff at end
+                '-/a-a.txt-',
             ],
         },
         {
-            glob: '/a:*/b:*/c:*.json',
-            query: { pathStartsWith: '/a:', pathEndsWith: '.json' },
-            regex: '^/a:.*/b:.*/c:.*\\.json$',
+            glob: '/foo:*/bar:*.json',
+            esQuery: { pathStartsWith: '/foo:', pathEndsWith: '.json', contentLengthGt: 0, },
+            pathRegex: '^/foo:.*/bar:.*\\.json$',
             matchingPaths: [
-                '/a:1/b:2/c:3.json',
-                '/a:/b:/c:.json',
-                '/a:1/b:2/x:99/c:3.json',
+                '/foo:/bar:.json',
+                '/foo:a/bar:a.json',
+                '/foo:-----/bar:-----.json',
             ],
-            otherPaths: [
-                '/a:1/b:2/c:3xjson',
-                '/a/b/c.json',
-                '/a:/b/c:.json',
-                '/a:xxxx.json',
-                'x/a:1/b:2/c:3.jsonx',
+            nonMatchingPaths: [
+                '/foo:.json',  // middle parts should be present
+                '-/foo:a/bar:a.json',
+                '/foo:a/bar:a.json-',
             ],
-        }
+        },
     ];
 
-    for (let { glob, query, regex, matchingPaths, otherPaths } of vectors) {
+    for (let vector of vectors) {
+        let { glob, esQuery, pathRegex, matchingPaths, nonMatchingPaths } = vector;
+
         let result = _globToEarthstarQueryAndPathRegex(glob);
-        console.log('---');
-        console.log(JSON.stringify({
-            glob: glob,
-            result: result,
-        }, null, 4));
-        t.same(query, result.query, 'query is as expected: ' + glob);
-        t.same(regex, result.pathRegex, 'regex is as expected: ' + glob);
-        if (regex != null) {
-            let re = new RegExp(regex);
+
+        //log('---');
+        //log(JSON.stringify({
+        //    ...vector,
+        //    result,
+        //}, null, 4));
+
+        t.same(result.query, esQuery, 'query is as expected: ' + glob);
+        t.same(result.pathRegex, pathRegex, 'regex is as expected: ' + glob);
+        if (result.pathRegex != null) {
+            let resultRe = new RegExp(result.pathRegex);
             for (let match of matchingPaths) {
-                t.true(re.test(match), 'regex should match: ' + match);
+                t.true(resultRe.test(match), 'regex should match: ' + match);
             }
-            for (let nonMatch of otherPaths) {
-                t.false(re.test(nonMatch), 'regex should not match: ' + nonMatch);
+            for (let nonMatch of nonMatchingPaths) {
+                t.false(resultRe.test(nonMatch), 'regex should not match: ' + nonMatch);
             }
         }
     }
