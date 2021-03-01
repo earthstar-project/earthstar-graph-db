@@ -58,6 +58,7 @@ Each edge document holds this content encoded as JSON:
 interface EdgeContent {
     source: string,
     dest: string,
+    owner: string,  // an author address or 'common'
     kind: string,
     data?: any;  // any user-provided data about this edge
 }
@@ -77,8 +78,7 @@ interface GraphQuery {
     kind?: string,
 }
 
-// Specify the edges you want.
-// Let's get everything that @suzy likes.
+// Example: Let's get everything that @suzy likes.
 let myGraphQuery: GraphQuery = {
     source: '@suzy.aorifjaof',
     owner: '@suzy.aorifjaof',  // only read edges made by @suzy!
@@ -91,13 +91,10 @@ let matchingEdgeDocuments = findEdges(myStorage, myGraphQuery);
 // parse the edge documents' content to get the EdgeContent data
 for (let edgeDoc of matchingEdgeDocs) {
     let edgeContent: EdgeContent = JSON.parse(edgeDoc.content);
+    console.log(`suzy likes ${edgeContent.dest}`);
 }
 ```
 
 There will be a similar way to query for nodes that have certain edges.
 
 There will probably **not** be any fancy querying that has to traverse multiple edges to find matches -- it'll be too slow.  We're limited by the built-in querying power of Earthstar which doesn't have the indexes needed for something like that.
-
-## More details
-
-Read the extensive comments in [index2.ts](https://github.com/earthstar-project/earthstar-graph-db/blob/main/src/index2.ts) for more details.

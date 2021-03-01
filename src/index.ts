@@ -171,6 +171,8 @@ export let _globToEarthstarQueryAndPathRegex = (glob: string): { query: Query, p
 // in order to read the original source and dest, kind, owner, and user-provided data.
 // See the EdgeContent type, above.
 
+// TODO: mix in the extra query (before or after?)
+
 export let findEdges = (storage: IStorage, graphQuery: GraphQuery, extraEarthstarQuery?: Query): Document[] | ValidationError => {
     let err = validateGraphQuery(graphQuery);
     if (isErr(err)) { return err; }
