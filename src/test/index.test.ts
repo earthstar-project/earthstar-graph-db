@@ -14,11 +14,10 @@ import {
 import {
     EdgeContent,
     GraphQuery,
-    _transformGraphQuery,
     writeEdge,
     findEdges,
     findEdgesAsync,
-    globToEarthstarQueryAndPathRegex,
+    _globToEarthstarQueryAndPathRegex,
 } from '../index';
 
 import t = require('tap');
@@ -268,7 +267,7 @@ t.test('glob', async (t: any) => {
     ];
 
     for (let { glob, query, regex, matchingPaths, otherPaths } of vectors) {
-        let result = globToEarthstarQueryAndPathRegex(glob);
+        let result = _globToEarthstarQueryAndPathRegex(glob);
         console.log('---');
         console.log(JSON.stringify({
             glob: glob,

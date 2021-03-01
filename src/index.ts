@@ -15,6 +15,7 @@ import {
     isErr,
     queryMatchesDoc,
     sha256base32,
+    validateQuery,
 } from 'earthstar';
 
 //================================================================================
@@ -80,79 +81,29 @@ export interface EdgeContent {
     data?: any;  // any user-provided data about this edge
 }
 
-// We're going to transform the graph query into an earthstar query,
-//  along with an optional filter function to run on the results.
+//================================================================================
+// NEW STUFF
 
-type FinalFilter = (path: Path) => boolean;
-interface TransformedGraphQuery {
-    esQuery: Query,
-    finalFilter: null | FinalFilter,
-}
-
-// escape a string so it's safe to use in a regular expression
 let escapeRegExp = (s: string) => {
+    // escape a string so it's safe to use in a regular expression
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 }
 
-export let globToEarthstarQueryAndPathRegex = (glob: string): { query: Query, pathRegex: string | null } => {
-    // Given a glob string,
-    // return an earthstar Query
-    // and a regular expression (as a plain string, not a RegExp instance).
-    // After this you can run the query yourself and apply the regex
-    // as a filter to the paths of the resulting documents,
-    // to get only the documents whose paths match the glob.
-    // The regex will be null if it's not needed.
-    // The glob string only supports '*' as a wildcard, no other
-    // special wildcards like '?' or '**' as in Bash.
-
-    let parts = glob.split('*');
-    let query: Query = {};
-    let pathRegex = null;
-
-    if (parts.length === 1) {
-        query = { path: glob };
-    } else if (parts.length === 2) {
-        query = { pathStartsWith: parts[0], pathEndsWith: parts[1] };
-    } else {
-        query = { pathStartsWith: parts[0], pathEndsWith: parts[parts.length - 1] };
-        pathRegex = '^' + parts.map(escapeRegExp).join('.*') + '$';
-    }
-
-    return { query, pathRegex };
-}
-
-export let _transformGraphQuery = (graphQuery: GraphQuery, extraEarthstarQuery?: Query): TransformedGraphQuery | ValidationError => {
-    // Transform the graphQuery into an Earthstar query.
-    // If extraEarthstarQuery is provided, it's mixed in too.  You can use it to provide
-    //  extra constraints by timestamp, limit, etc.
-
-    extraEarthstarQuery = extraEarthstarQuery === undefined ? {} : extraEarthstarQuery;
-
-    // Skip edge docs with doc.content length of zero, because those are deleted docs.
-    // Note that the provided extra query can override this if it wants to get deleted docs too,
-    //  by setting contentLengthGt: -1
-    if (extraEarthstarQuery.contentLengthGt === undefined) {
-        extraEarthstarQuery.contentLengthGt = 0;
-    }
-
-    // replace undefined edge query keys with '*' because it's shorter to type than 'undefined' :)
-    let source = graphQuery.source || '*'
-    let owner = graphQuery.owner || '*'
-    let kind = graphQuery.kind || '*'
-    let dest = graphQuery.dest || '*'
-
+export let _validateGraphQuery = (graphQuery: GraphQuery): ValidationError | null => {
     // Check validitiy of inputs
-    // soruce and dest can be any strings
+    // source and dest can be any strings
+
+    let { source, dest, owner, kind } = graphQuery;
 
     // owner must be 'common' or a valid author address
-    if (owner !== '*' && owner !== 'common') {
+    if (owner !== undefined && owner !== 'common') {
         let parsedAuthor = ValidatorEs4.parseAuthorAddress(owner);
         if (isErr(parsedAuthor)) {
             return new ValidationError('if set, graphQuery.owner must be "common" or an author address like "@suzy.jawofiaj...."');
         }
     }
     // kind must be a valid earthstar path segment
-    if (kind !== '*') {
+    if (kind !== undefined) {
         if (kind.indexOf('/') !== -1) {
             return new ValidationError(`edge kind "${kind}" must not contain a slash`);
         }
@@ -161,125 +112,52 @@ export let _transformGraphQuery = (graphQuery: GraphQuery, extraEarthstarQuery?:
             return new ValidationError(`edge kind "${kind}" is not valid in an earthstar path`);
         }
     }
+    return null;
+}
 
-    // hash the source and dest paths
+export let _graphQueryToGlob = (graphQuery: GraphQuery): string => {
+    let source = graphQuery.source ?? '*'
+    let owner = graphQuery.owner ?? '*'
+    let kind = graphQuery.kind ?? '*'
+    let dest = graphQuery.dest ?? '*'
+
     let sourceHash = source === '*' ? '*' : sha256base32(source);
     let destHash = dest === '*' ? '*' : sha256base32(dest);
 
-    // make an array of the path parts we're going to assemble into our edge path, in the right order
-    let parts = [sourceHash, owner, kind, destHash];
-    // make a shorthand array where '-' represents known, and '*' represents not specified.
-    // we'll use this to more easily pattern-match in the next section
-    let partsPattern = parts.map(x => x === '*' ? '*' : '-').join();
+    let glob = `${PATH_PREFIX}/source:${sourceHash}/owner:${owner}/kind:${kind}/destPath:${destHash}.json`
 
-    let esQuery: Query = {};
-
-    // Some combinations can't be done just with pathStartsWith and pathEndsWith.
-    // These require an extra filtering step at the end.
-    // They will provide a filter function which runs on each matched edge document,
-    //  returning true on the ones they want to keep.
-    // Queries that have to do this are slow - they are scanning every
-    //  edge document in the whole workspace.
-    let finalFilter: FinalFilter | null = null;
-
-    // Build an earthstar query out of our 16 combinations of constraints.
-    if (partsPattern === '----') {  // 0
-        // everything is specified so we can just do a direct path query.
-        // "get the one edge from source to dest, with given owner and kind"
-        // this is fast!
-        esQuery = {
-            path: `${PATH_PREFIX}/source:${sourceHash}/owner:${owner}/kind:${kind}/destPath:${destHash}.json`
-        }
-    } else if (partsPattern === '---*') {  // 1
-        // dest is not specified
-        // "get all outgoing nodes from a path, with given owner and kind"
-        esQuery = {
-            pathStartsWith: `${PATH_PREFIX}/source:${sourceHash}/owner:${owner}/kind:${kind}/`,
-            pathEndsWith: `.json`,
-        }
-    } else if (partsPattern === '--*-') {  // 2
-        // kind is not specified
-        // get all edges between source and dest, with the given owner"
-        esQuery = {
-            pathStartsWith: `${PATH_PREFIX}/source:${sourceHash}/owner:${owner}/`,
-            pathEndsWith: `/${destHash}.json`,
-        }
-    } else if (partsPattern === '--**') {  // 3
-        // kind, dest is not specified
-        // "get all outgoing nodes from a path, with given owner and any kind"
-        esQuery = {
-            pathStartsWith: `${PATH_PREFIX}/source:${sourceHash}/owner:${owner}/`,
-            pathEndsWith: `.json`,
-        }
-    } else if (partsPattern === '-*--') {  // 4
-        // owner is not specified
-        // "get all edges between source and dest, with any owner, for the given kind"
-        esQuery = {
-            pathStartsWith: `${PATH_PREFIX}/source:${sourceHash}/`,
-            pathEndsWith: `/kind:${kind}/${destHash}.json`,
-        }
-    } else if (partsPattern === '-*-*') {  // 5
-        // source and kind are specified
-        // owner and dest are not
-        // "get all outgoing edges from source node, of a certain kind"
-        // this is slow
-        esQuery = {
-            pathStartsWith: `${PATH_PREFIX}/source:${sourceHash}/`,
-            pathEndsWith: `.json`,
-        }
-        finalFilter = (path) =>
-            path.indexOf('/kind:${}/') !== -1
-    } else if (partsPattern === '-**-') {  // 6
-        // source and dest are specified
-        // owner and kind are not
-        // "get all edges between source and dest"
-        esQuery = {
-            pathStartsWith: `${PATH_PREFIX}/source:${sourceHash}/`,
-            pathEndsWith: `/dest:${destHash}.json`,
-        }
-    } else if (partsPattern === '-***') {  // 7
-        // only source is specified
-        // "get all outgoing edges from a path"
-        esQuery = {
-            pathStartsWith: `${PATH_PREFIX}/source:${sourceHash}/`,
-            pathEndsWith: `.json`,
-        }
-    } else if (partsPattern === '*---') {  // 8
-        return new ValidationError('TODO: combination #8 of edge query options is not implemented yet');
-    } else if (partsPattern === '*--*') {  // 9
-        return new ValidationError('TODO: combination #9 of edge query options is not implemented yet');
-    } else if (partsPattern === '*-*-') {  // 10
-        return new ValidationError('TODO: combination #10 of edge query options is not implemented yet');
-    } else if (partsPattern === '*-**') {  // 11
-        return new ValidationError('TODO: combination #11 of edge query options is not implemented yet');
-    } else if (partsPattern === '**--') {  // 12
-        return new ValidationError('TODO: combination #12 of edge query options is not implemented yet');
-    } else if (partsPattern === '**-*') {  // 13
-        return new ValidationError('TODO: combination #13 of edge query options is not implemented yet');
-    } else if (partsPattern === '***-') {  // 14
-        return new ValidationError('TODO: combination #14 of edge query options is not implemented yet');
-    } else if (partsPattern === '****') {  // 15
-        // no constraints at all, empty graph query.
-        // "get all edges"
-        esQuery = {
-            pathStartsWith: `${PATH_PREFIX}/`,
-            pathEndsWith: `.json`,
-        }
-    } else {
-        return new ValidationError(`unexpected error: partsPattern = ${partsPattern}`);
-    }
-
-    // mix in the extra query
-    esQuery = {
-        ...extraEarthstarQuery,
-        esQuery,
-    } as Query;
-
-    return {
-        esQuery,
-        finalFilter,
-    }
+    return glob;
 }
+
+export let _globToEarthstarQueryAndPathRegex = (glob: string): { query: Query, pathRegex: string | null } => {
+    // Given a glob string, return:
+    //    - an earthstar Query
+    //    - and a regular expression (as a plain string, not a RegExp instance).
+    // After this you can run the query yourself and apply the regex
+    // as a filter to the paths of the resulting documents,
+    // to get only the documents whose paths match the glob.
+    // The regex will be null if it's not needed.
+    // The glob string only supports '*' as a wildcard, no other
+    // special wildcards like '?' or '**' as in Bash.
+
+    let parts = glob.split('*');
+    let query: Query = { contentLengthGt: 0 };  // skip deleted edges
+    let pathRegex = null;
+
+    if (parts.length === 0) {
+        query = { ...query, path: glob };
+    } else {
+        query = {
+            ...query,
+            pathStartsWith: parts[-1],
+            pathEndsWith: parts[parts.length - 1],
+        };
+        pathRegex = '^' + parts.map(escapeRegExp).join('.*') + '$';
+    }
+
+    return { query, pathRegex };
+}
+
 
 //================================================================================
 // Run a graph query on a storage.
@@ -288,30 +166,36 @@ export let _transformGraphQuery = (graphQuery: GraphQuery, extraEarthstarQuery?:
 // in order to read the original source and dest, kind, owner, and user-provided data.
 // See the EdgeContent type, above.
 
-// TODO: maybe parse it for you?  but you might also want the original document content like timestamp, ...
-
 export let findEdges = (storage: IStorage, graphQuery: GraphQuery, extraEarthstarQuery?: Query): Document[] | ValidationError => {
-    let transformed = _transformGraphQuery(graphQuery, extraEarthstarQuery);
-    if (isErr(transformed)) { return transformed; }
-    let { esQuery, finalFilter } = transformed;
-    let docs = storage.documents(esQuery);
-    if (finalFilter !== null) {
-        docs = docs.filter(doc => (finalFilter as FinalFilter)(doc.path));
+    let err = _validateGraphQuery(graphQuery);
+    if (isErr(err)) { return err; }
+
+    let glob = _graphQueryToGlob(graphQuery);
+    let { query, pathRegex } = _globToEarthstarQueryAndPathRegex(glob);
+
+    let docs = storage.documents(query);
+    if (pathRegex != null) {
+        let re = new RegExp(pathRegex);
+        docs = docs.filter(doc => re.test(doc.path));
     }
     return docs;
 }
 
+// same as above but async
 export let findEdgesAsync = async (storage: IStorage | IStorageAsync, graphQuery: GraphQuery, extraEarthstarQuery?: Query): Promise<Document[] | ValidationError> => {
-    let transformed = _transformGraphQuery(graphQuery, extraEarthstarQuery);
-    if (isErr(transformed)) { return transformed; }
-    let { esQuery, finalFilter } = transformed;
-    let docs = await storage.documents(esQuery);
-    if (finalFilter !== null) {
-        docs = docs.filter(doc => (finalFilter as FinalFilter)(doc.path));
+    let err = _validateGraphQuery(graphQuery);
+    if (isErr(err)) { return err; }
+
+    let glob = _graphQueryToGlob(graphQuery);
+    let { query, pathRegex } = _globToEarthstarQueryAndPathRegex(glob);
+
+    let docs = await storage.documents(query);
+    if (pathRegex != null) {
+        let re = new RegExp(pathRegex);
+        docs = docs.filter(doc => re.test(doc.path));
     }
     return docs;
 }
-
 
 //================================================================================
 // WRITING EDGES
