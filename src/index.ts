@@ -60,7 +60,7 @@ and there can only be one edge with those 4 particular properties.
 //    total path length = 214 + length of EDGE_KIND
 //    The earthstar path length limit is 512 characters, so we have plenty of room
 
-const PATH_PREFIX: string = '/graphdb-v1/edge'
+export const GRAPH_PATH_PREFIX: string = '/graphdb-v1/edge'
 
 // You look up edges with GraphQuery objects.
 // Specify each of these options to narrow down your query.
@@ -89,7 +89,7 @@ let escapeRegExp = (s: string) => {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 }
 
-export let _validateGraphQuery = (graphQuery: GraphQuery): ValidationError | null => {
+export let validateGraphQuery = (graphQuery: GraphQuery): ValidationError | null => {
     // Check validitiy of inputs
     // source and dest can be any strings
 
@@ -112,19 +112,21 @@ export let _validateGraphQuery = (graphQuery: GraphQuery): ValidationError | nul
             return new ValidationError(`edge kind "${kind}" is not valid in an earthstar path`);
         }
     }
+
     return null;
 }
 
 export let _graphQueryToGlob = (graphQuery: GraphQuery): string => {
     let source = graphQuery.source ?? '*'
     let owner = graphQuery.owner ?? '*'
+    if (owner.startsWith('@')) { owner = '~' + owner; }
     let kind = graphQuery.kind ?? '*'
     let dest = graphQuery.dest ?? '*'
 
     let sourceHash = source === '*' ? '*' : sha256base32(source);
     let destHash = dest === '*' ? '*' : sha256base32(dest);
 
-    let glob = `${PATH_PREFIX}/source:${sourceHash}/owner:${owner}/kind:${kind}/destPath:${destHash}.json`
+    let glob = `${GRAPH_PATH_PREFIX}/source:${sourceHash}/owner:${owner}/kind:${kind}/dest:${destHash}.json`
 
     return glob;
 }
@@ -167,7 +169,7 @@ export let _globToEarthstarQueryAndPathRegex = (glob: string): { query: Query, p
 // See the EdgeContent type, above.
 
 export let findEdges = (storage: IStorage, graphQuery: GraphQuery, extraEarthstarQuery?: Query): Document[] | ValidationError => {
-    let err = _validateGraphQuery(graphQuery);
+    let err = validateGraphQuery(graphQuery);
     if (isErr(err)) { return err; }
 
     let glob = _graphQueryToGlob(graphQuery);
@@ -183,7 +185,7 @@ export let findEdges = (storage: IStorage, graphQuery: GraphQuery, extraEarthsta
 
 // same as above but async
 export let findEdgesAsync = async (storage: IStorage | IStorageAsync, graphQuery: GraphQuery, extraEarthstarQuery?: Query): Promise<Document[] | ValidationError> => {
-    let err = _validateGraphQuery(graphQuery);
+    let err = validateGraphQuery(graphQuery);
     if (isErr(err)) { return err; }
 
     let glob = _graphQueryToGlob(graphQuery);
@@ -205,7 +207,7 @@ export let writeEdge = async (storage: IStorage | IStorageAsync, authorKeypair: 
     let sourceHash = sha256base32(edge.source);
     let destHash = sha256base32(edge.dest);
     let ownerWithTilde = edge.owner === 'common' ? 'common' : '~' + edge.owner;
-    let path = `${PATH_PREFIX}/source:${sourceHash}/owner:${ownerWithTilde}/kind:${edge.kind}/destPath:${destHash}.json`
+    let path = `${GRAPH_PATH_PREFIX}/source:${sourceHash}/owner:${ownerWithTilde}/kind:${edge.kind}/dest:${destHash}.json`
     let docToSet: DocToSet = {
         format: 'es.4',
         path: path,

@@ -9,15 +9,20 @@ import {
     WriteResult,
     generateAuthorKeypair,
     isErr,
-    stringLengthInBytes,
+    notErr,
+    queryMatchesDoc,
+    sha256base32,
 } from 'earthstar';
 import {
     EdgeContent,
+    GRAPH_PATH_PREFIX,
     GraphQuery,
-    writeEdge,
+    _globToEarthstarQueryAndPathRegex,
     findEdges,
     findEdgesAsync,
-    _globToEarthstarQueryAndPathRegex,
+    validateGraphQuery,
+    writeEdge,
+    _graphQueryToGlob,
 } from '../index';
 
 import t = require('tap');
@@ -151,7 +156,20 @@ let addTestData = async (storage: IStorage): Promise<void> => {
     });
 }
 
-t.test('keypair permissions', async (t: any) => {
+//================================================================================
+
+t.test('writeEdge: basics', async (t: any) => {
+    let storage = new StorageMemory([ValidatorEs4], workspace);
+
+    await addTestData(storage);
+    let paths = await storage.paths();
+    t.same(paths.length, 10, 'expected number of edges in test data; all were written successfully');
+
+    storage.close();
+    t.done();
+});
+
+t.test('writeEdge: keypair permissions', async (t: any) => {
     let storage = new StorageMemory([ValidatorEs4], workspace);
 
     let result = await writeEdge(storage, keypair1, {
@@ -192,22 +210,56 @@ t.test('keypair permissions', async (t: any) => {
     t.done();
 });
 
-t.test('basics', async (t: any) => {
-    let storage = new StorageMemory([ValidatorEs4], workspace);
+//================================================================================
 
-    await addTestData(storage);
-    let paths = await storage.paths();
-    //for (let path of paths) { log(path); }
-    t.same(paths.length, 10, 'expected number of edges in test data; all were written successfully');
-    //for (let d of await storage.documents()) {
-    //    log(d);
-    //}
+t.test('validateGraphQuery', async (t: any) => {
+    interface Vector {
+        query: GraphQuery,
+        shouldBeValid: boolean,
+    };
+    let vectors: Vector[] = [
+        { shouldBeValid: true,  query: {}},
 
-    storage.close();
+        { shouldBeValid: true,  query: { owner: 'common'}},
+        { shouldBeValid: true,  query: { owner: author1}},
+        { shouldBeValid: false, query: { owner: '~' + author1}},
+        { shouldBeValid: false, query: { owner: '@fooo'}},
+
+        { shouldBeValid: true,  query: { kind: 'foo'}},
+        { shouldBeValid: false, query: { kind: '/'}},
+        { shouldBeValid: false, query: { kind: '*'}},
+        { shouldBeValid: false, query: { kind: '?'}},
+        { shouldBeValid: false, query: { kind: 'foo bar'}},
+    ];
+    for (let { query, shouldBeValid } of vectors) {
+        let err = validateGraphQuery(query);
+        t.same(notErr(err), shouldBeValid, `should${shouldBeValid ? '' : ' not'} be valid: ${JSON.stringify(query)}`);
+    }
     t.done();
 });
 
-t.test('glob', async (t: any) => {
+t.test('_graphQueryToGlob', async (t: any) => {
+    interface Vector {
+        query: GraphQuery,
+        glob: string,
+    };
+    let PATH_PREFIX
+    let vectors: Vector[] = [
+        { query: {}, glob: `${GRAPH_PATH_PREFIX}/source:*/owner:*/kind:*/dest:*.json` },
+        { query: {owner: 'common'}, glob: `${GRAPH_PATH_PREFIX}/source:*/owner:common/kind:*/dest:*.json` },
+        { query: {owner: author1}, glob: `${GRAPH_PATH_PREFIX}/source:*/owner:~${author1}/kind:*/dest:*.json` },
+        { query: {kind: 'foo'}, glob: `${GRAPH_PATH_PREFIX}/source:*/owner:*/kind:foo/dest:*.json` },
+        { query: {source: 'a'}, glob: `${GRAPH_PATH_PREFIX}/source:${sha256base32('a')}/owner:*/kind:*/dest:*.json` },
+        { query: {dest: 'a'}, glob: `${GRAPH_PATH_PREFIX}/source:*/owner:*/kind:*/dest:${sha256base32('a')}.json` },
+    ];
+    for (let { query, glob } of vectors) {
+        let returnedGlob = _graphQueryToGlob(query);
+        t.same(returnedGlob, glob, `glob should match for query ${JSON.stringify(query)}`);
+    }
+    t.done();
+});
+
+t.skip('glob', async (t: any) => {
     interface Vector {
         glob: string,
         query: Query,
@@ -289,6 +341,3 @@ t.test('glob', async (t: any) => {
     t.done();
 });
 
-// TODO: _transformGraphQuery
-// TODO: actually querying
-// TODO: deleting edges
