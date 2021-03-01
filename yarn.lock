@@ -898,10 +898,10 @@ diff@^4.0.1:
   resolved "https://registry.yarnpkg.com/diff/-/diff-4.0.2.tgz#60f3aecb89d5fae520c11aa19efc2bb982aade7d"
   integrity sha512-58lmxKSA4BNyLz+HHMUzlOEpg09FV+ev6ZMe3vJihgdxzgcwZ8VoEEPmALCZG9LmqfVoNMMKpttIYTVG6uDY7A==
 
-earthstar@^6.2.1:
-  version "6.2.1"
-  resolved "https://registry.yarnpkg.com/earthstar/-/earthstar-6.2.1.tgz#914e51a5f8f7af7eea8eb67b340dfe50a214ce5d"
-  integrity sha512-OxC8yo0NzFg4HJUdfU51lU7u/XfinxwqmWMIySTUKT8YMcE2xHFfnDq02DXxfiPQz12eq8YvpFCJaEmw59ltHg==
+earthstar@^6.3.1:
+  version "6.3.1"
+  resolved "https://registry.yarnpkg.com/earthstar/-/earthstar-6.3.1.tgz#8853792904fbb90efeb5efd7c7e80ab8dd331442"
+  integrity sha512-+kDIE+Fzk+R98zwKrUo7AiEWYtylupn4PRnFrsRrLA+vtljBmuoaSjo4jZYvTiCYb0pAbv6T0eOiGnWw0atDJQ==
   dependencies:
     "@types/better-sqlite3" "^5.4.1"
     "@types/isomorphic-fetch" "0.0.35"
@@ -2860,9 +2860,9 @@ web-encoding@^1.0.2:
     "@zxing/text-encoding" "0.9.0"
 
 whatwg-fetch@>=0.10.0:
-  version "3.5.0"
-  resolved "https://registry.yarnpkg.com/whatwg-fetch/-/whatwg-fetch-3.5.0.tgz#605a2cd0a7146e5db141e29d1c62ab84c0c4c868"
-  integrity sha512-jXkLtsR42xhXg7akoDKvKWE40eJeI+2KZqcp2h3NsOrRnDvtWX36KcKl30dy+hxECivdk2BVUHVNrPtoMBUx6A==
+  version "3.6.2"
+  resolved "https://registry.yarnpkg.com/whatwg-fetch/-/whatwg-fetch-3.6.2.tgz#dced24f37f2624ed0281725d51d0e2e3fe677f8c"
+  integrity sha512-bJlen0FcuU/0EMLrdbJ7zOnW6ITZLrZMIarMUVmdKtsGvZna8vxKYaexICWPfZ8qwf9fzNq+UEIZrnSaApt6RA==
 
 which-module@^2.0.0:
   version "2.0.0"
