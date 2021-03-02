@@ -25,7 +25,7 @@ import {
     _graphQueryToGlob,
 } from '../index';
 
-import t = require('tap');
+import t from 'tap';
 //t.runOnly = true;
 
 let log = console.log;
@@ -158,7 +158,7 @@ let addTestData = async (storage: IStorage): Promise<void> => {
 
 //================================================================================
 
-t.test('writeEdge: basics', async (t: any) => {
+t.test('writeEdge: basics', async (t) => {
     let storage = new StorageMemory([ValidatorEs4], workspace);
 
     await addTestData(storage);
@@ -169,7 +169,7 @@ t.test('writeEdge: basics', async (t: any) => {
     t.done();
 });
 
-t.test('writeEdge: keypair permissions', async (t: any) => {
+t.test('writeEdge: keypair permissions', async (t) => {
     let storage = new StorageMemory([ValidatorEs4], workspace);
 
     let result = await writeEdge(storage, keypair1, {
@@ -212,7 +212,7 @@ t.test('writeEdge: keypair permissions', async (t: any) => {
 
 //================================================================================
 
-t.test('validateGraphQuery', async (t: any) => {
+t.test('validateGraphQuery', async (t) => {
     interface Vector {
         graphQuery: GraphQuery,
         shouldBeValid: boolean,
@@ -238,7 +238,7 @@ t.test('validateGraphQuery', async (t: any) => {
     t.done();
 });
 
-t.test('_graphQueryToGlob', async (t: any) => {
+t.test('_graphQueryToGlob', async (t) => {
     interface Vector {
         graphQuery: GraphQuery,
         glob: string,
@@ -258,7 +258,75 @@ t.test('_graphQueryToGlob', async (t: any) => {
     t.done();
 });
 
-t.test('_globToEarthstarQueryAndPathRegex', async (t: any) => {
+t.test('findEdges', async (t) => {
+    let storage = new StorageMemory([ValidatorEs4], workspace);
+    
+    await addTestData(storage);
+    
+    interface TestCases {
+        name: string,
+        graphQuery: GraphQuery,
+        extraQuery?: Query,
+    }
+    
+    let tests: TestCases[] = [
+        {
+            name: `Source is ${author1}`,
+            graphQuery: {
+                source: author1,
+            },
+        },
+        {
+            name: 'Kind is "REACTED"',
+            graphQuery: {
+                kind: 'REACTED',
+            }
+        },
+        {
+            name: `Destination is ${blogPath}`,
+            graphQuery: {
+                dest: blogPath
+            }
+        },
+        {
+            name: `Owner is ${author2}`,
+            graphQuery: {
+                owner: author2
+            }
+        },
+        {
+            name: 'Kind is REACTED and doc is deleted',
+            graphQuery: {
+                kind: 'REACTED',
+            },
+            extraQuery: {
+                contentLength: 0
+            }
+        }
+    ];
+    
+    const getPaths = (args: TestCases) => {
+        const edges = findEdges(storage, args.graphQuery, args.extraQuery);
+        
+        if (isErr(edges)) {
+            return [];
+        }
+        
+        return edges.map((edge) => edge.path);
+    }
+    
+    
+    // Use snapshots here as the results are long strings with hashes in them
+    tests.forEach((test) => {
+        t.matchSnapshot(getPaths(test), test.name)
+    })
+    
+    storage.close()
+    
+    t.done();
+})
+
+t.test('_globToEarthstarQueryAndPathRegex', async (t) => {
     interface Vector {
         glob: string,
         esQuery: Query,
