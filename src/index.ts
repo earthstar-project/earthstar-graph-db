@@ -149,17 +149,35 @@ export let _globToEarthstarQueryAndPathRegex = (glob: string): { query: Query, p
         // The glob has no wildcards, and the path is completely defined.
         query = {
             ...query,
-            path: glob
+            path: glob,
         };
     } else {
-        // The glob has wildcards within it.
-        // Because the wildcards never appear at the beginning or end of the glob, we can use the first and last parts in our query.
+        // The glob has wildcard(s) within it.
         query = {
             ...query,
             pathStartsWith: parts[0],
             pathEndsWith: parts[parts.length - 1],
         };
+        // Make a regex to enforece the glob.
         pathRegex = '^' + parts.map(escapeRegExp).join('.*') + '$';
+
+        // Optimize some special cases:
+
+        // If the glob starts or ends with a wildcard, the first or last part
+        // will just be empty strings
+        // and we can trim them from the query.
+        if (query.pathStartsWith === '') {
+            delete query.pathStartsWith;
+        }
+        if (query.pathEndsWith === '') {
+            delete query.pathEndsWith;
+        }
+
+        // Special case for '*foo' or 'foo*' -- no regex is needed,
+        // we can just rely on pathStartsWith or pathEndsWith to do all the work.
+        if (parts.length === 2 && (parts[0] === '' || parts[parts.length-1] === '')) {
+            pathRegex = null;
+        }
     }
 
     return { query, pathRegex };

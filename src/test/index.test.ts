@@ -318,7 +318,10 @@ t.test('findEdges', async (t) => {
     
     // Use snapshots here as the results are long strings with hashes in them
     tests.forEach((test) => {
-        t.matchSnapshot(getPaths(test), test.name)
+        // cinn says: I disabled snapshot testing for now
+        // since it doesn't work well -- we have different
+        // randomly generated author ids each time.
+        //t.matchSnapshot(getPaths(test), test.name)
     })
     
     storage.close()
@@ -336,7 +339,7 @@ t.test('_globToEarthstarQueryAndPathRegex', async (t) => {
     };
     let vectors: Vector[] = [
         {
-            // if there's no asterisks...
+            // no asterisks
             glob: '/a',
             esQuery: { path: '/a', contentLengthGt: 0, },  // exact path, not startsWith and endsWith
             pathRegex: null,  // no regex is needed
@@ -344,6 +347,38 @@ t.test('_globToEarthstarQueryAndPathRegex', async (t) => {
             nonMatchingPaths: ['/', 'a', '/b', '-/a', '/a-'],
         },
         {
+            // one asterisk at beginning
+            glob: '*a.txt',
+            esQuery: { pathEndsWith: 'a.txt', contentLengthGt: 0, },
+            pathRegex: null,  // no regex needed
+            matchingPaths: [
+                'a.txt',
+                '-a.txt',
+                '----a.txt',
+                '/x/x/xa.txt',
+            ],
+            nonMatchingPaths: [
+                'a-txt',  // the dot should not become a wildcard
+                'a.txt-',  // no extra stuff at end
+            ],
+        },
+        {
+            // one asterisk at end
+            glob: '/abc*',
+            esQuery: { pathStartsWith: '/abc', contentLengthGt: 0, },
+            pathRegex: null,  // no regex needed
+            matchingPaths: [
+                '/abc',
+                '/abc-',
+                '/abc/xyz.foo',
+            ],
+            nonMatchingPaths: [
+                'abc',
+                '-/abc/',
+            ],
+        },
+        {
+            // one asterisk in the middle
             glob: '/a*a.txt',
             esQuery: { pathStartsWith: '/a', pathEndsWith: 'a.txt', contentLengthGt: 0, },
             pathRegex: '^/a.*a\\.txt$',
@@ -363,6 +398,76 @@ t.test('_globToEarthstarQueryAndPathRegex', async (t) => {
             ],
         },
         {
+            // one asterisk at start and one in the middle
+            glob: '*a*b',
+            esQuery: { pathEndsWith: 'b', contentLengthGt: 0, },
+            pathRegex: '^.*a.*b$',
+            matchingPaths: [
+                'ab',
+                '-ab',
+                'a-b',
+                '-a-b',
+                '---a---b',
+            ],
+            nonMatchingPaths: [
+                'ab-',
+                'aa',
+            ],
+        },
+        {
+            // one asterisk at end and one in the middle
+            glob: 'a*b*',
+            esQuery: { pathStartsWith: 'a', contentLengthGt: 0, },
+            pathRegex: '^a.*b.*$',
+            matchingPaths: [
+                'ab',
+                'ab-',
+                'a-b',
+                'a-b-',
+                'a---b---',
+            ],
+            nonMatchingPaths: [
+                '-ab',
+                'aa',
+            ],
+        },
+        {
+            // one asterisk at start and one at end
+            glob: '*abc*',
+            esQuery: { contentLengthGt: 0, },
+            pathRegex: '^.*abc.*$',
+            matchingPaths: [
+                'abc',
+                'abc-',
+                '-abc',
+                '-abc-',
+                '---abc---',
+            ],
+            nonMatchingPaths: [
+                'ac',
+            ],
+        },
+        {
+            // one asterisk at start, one in middle, one at end
+            glob: '*a*b*',
+            esQuery: { contentLengthGt: 0, },
+            pathRegex: '^.*a.*b.*$',
+            matchingPaths: [
+                'ab',
+                'ab-',
+                '-ab',
+                '-ab-',
+                '---ab---',
+                '---a----b---',
+                'a-b',
+                '-a-b-',
+            ],
+            nonMatchingPaths: [
+                'ac',
+            ],
+        },
+        {
+            // multiple asterisks not at the start or end
             glob: '/foo:*/bar:*.json',
             esQuery: { pathStartsWith: '/foo:', pathEndsWith: '.json', contentLengthGt: 0, },
             pathRegex: '^/foo:.*/bar:.*\\.json$',
