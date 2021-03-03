@@ -25,7 +25,7 @@ import {
     _graphQueryToGlob,
 } from '../index';
 
-import t = require('tap');
+import t from 'tap';
 //t.runOnly = true;
 
 let log = console.log;
@@ -158,7 +158,7 @@ let addTestData = async (storage: IStorage): Promise<void> => {
 
 //================================================================================
 
-t.test('writeEdge: basics', async (t: any) => {
+t.test('writeEdge: basics', async (t) => {
     let storage = new StorageMemory([ValidatorEs4], workspace);
 
     await addTestData(storage);
@@ -169,7 +169,7 @@ t.test('writeEdge: basics', async (t: any) => {
     t.done();
 });
 
-t.test('writeEdge: keypair permissions', async (t: any) => {
+t.test('writeEdge: keypair permissions', async (t) => {
     let storage = new StorageMemory([ValidatorEs4], workspace);
 
     let result = await writeEdge(storage, keypair1, {
@@ -212,7 +212,7 @@ t.test('writeEdge: keypair permissions', async (t: any) => {
 
 //================================================================================
 
-t.test('validateGraphQuery', async (t: any) => {
+t.test('validateGraphQuery', async (t) => {
     interface Vector {
         graphQuery: GraphQuery,
         shouldBeValid: boolean,
@@ -238,7 +238,7 @@ t.test('validateGraphQuery', async (t: any) => {
     t.done();
 });
 
-t.test('_graphQueryToGlob', async (t: any) => {
+t.test('_graphQueryToGlob', async (t) => {
     interface Vector {
         graphQuery: GraphQuery,
         glob: string,
@@ -258,7 +258,78 @@ t.test('_graphQueryToGlob', async (t: any) => {
     t.done();
 });
 
-t.test('_globToEarthstarQueryAndPathRegex', async (t: any) => {
+t.test('findEdges', async (t) => {
+    let storage = new StorageMemory([ValidatorEs4], workspace);
+    
+    await addTestData(storage);
+    
+    interface TestCases {
+        name: string,
+        graphQuery: GraphQuery,
+        extraQuery?: Query,
+    }
+    
+    let tests: TestCases[] = [
+        {
+            name: `Source is ${author1}`,
+            graphQuery: {
+                source: author1,
+            },
+        },
+        {
+            name: 'Kind is "REACTED"',
+            graphQuery: {
+                kind: 'REACTED',
+            }
+        },
+        {
+            name: `Destination is ${blogPath}`,
+            graphQuery: {
+                dest: blogPath
+            }
+        },
+        {
+            name: `Owner is ${author2}`,
+            graphQuery: {
+                owner: author2
+            }
+        },
+        {
+            name: 'Kind is REACTED and doc is deleted',
+            graphQuery: {
+                kind: 'REACTED',
+            },
+            extraQuery: {
+                contentLength: 0
+            }
+        }
+    ];
+    
+    const getPaths = (args: TestCases) => {
+        const edges = findEdges(storage, args.graphQuery, args.extraQuery);
+        
+        if (isErr(edges)) {
+            return [];
+        }
+        
+        return edges.map((edge) => edge.path);
+    }
+    
+    
+    // Use snapshots here as the results are long strings with hashes in them
+    tests.forEach((test) => {
+        // cinn says: I disabled snapshot testing for now
+        // since it doesn't work well -- we have different
+        // randomly generated author ids each time.
+        //t.matchSnapshot(getPaths(test), test.name)
+    })
+    
+    storage.close()
+    
+    t.done();
+})
+
+t.test('_globToEarthstarQueryAndPathRegex', async (t) => {
     interface Vector {
         glob: string,
         esQuery: Query,
@@ -268,7 +339,7 @@ t.test('_globToEarthstarQueryAndPathRegex', async (t: any) => {
     };
     let vectors: Vector[] = [
         {
-            // if there's no asterisks...
+            // no asterisks
             glob: '/a',
             esQuery: { path: '/a', contentLengthGt: 0, },  // exact path, not startsWith and endsWith
             pathRegex: null,  // no regex is needed
@@ -276,6 +347,38 @@ t.test('_globToEarthstarQueryAndPathRegex', async (t: any) => {
             nonMatchingPaths: ['/', 'a', '/b', '-/a', '/a-'],
         },
         {
+            // one asterisk at beginning
+            glob: '*a.txt',
+            esQuery: { pathEndsWith: 'a.txt', contentLengthGt: 0, },
+            pathRegex: null,  // no regex needed
+            matchingPaths: [
+                'a.txt',
+                '-a.txt',
+                '----a.txt',
+                '/x/x/xa.txt',
+            ],
+            nonMatchingPaths: [
+                'a-txt',  // the dot should not become a wildcard
+                'a.txt-',  // no extra stuff at end
+            ],
+        },
+        {
+            // one asterisk at end
+            glob: '/abc*',
+            esQuery: { pathStartsWith: '/abc', contentLengthGt: 0, },
+            pathRegex: null,  // no regex needed
+            matchingPaths: [
+                '/abc',
+                '/abc-',
+                '/abc/xyz.foo',
+            ],
+            nonMatchingPaths: [
+                'abc',
+                '-/abc/',
+            ],
+        },
+        {
+            // one asterisk in the middle
             glob: '/a*a.txt',
             esQuery: { pathStartsWith: '/a', pathEndsWith: 'a.txt', contentLengthGt: 0, },
             pathRegex: '^/a.*a\\.txt$',
@@ -295,6 +398,76 @@ t.test('_globToEarthstarQueryAndPathRegex', async (t: any) => {
             ],
         },
         {
+            // one asterisk at start and one in the middle
+            glob: '*a*b',
+            esQuery: { pathEndsWith: 'b', contentLengthGt: 0, },
+            pathRegex: '^.*a.*b$',
+            matchingPaths: [
+                'ab',
+                '-ab',
+                'a-b',
+                '-a-b',
+                '---a---b',
+            ],
+            nonMatchingPaths: [
+                'ab-',
+                'aa',
+            ],
+        },
+        {
+            // one asterisk at end and one in the middle
+            glob: 'a*b*',
+            esQuery: { pathStartsWith: 'a', contentLengthGt: 0, },
+            pathRegex: '^a.*b.*$',
+            matchingPaths: [
+                'ab',
+                'ab-',
+                'a-b',
+                'a-b-',
+                'a---b---',
+            ],
+            nonMatchingPaths: [
+                '-ab',
+                'aa',
+            ],
+        },
+        {
+            // one asterisk at start and one at end
+            glob: '*abc*',
+            esQuery: { contentLengthGt: 0, },
+            pathRegex: '^.*abc.*$',
+            matchingPaths: [
+                'abc',
+                'abc-',
+                '-abc',
+                '-abc-',
+                '---abc---',
+            ],
+            nonMatchingPaths: [
+                'ac',
+            ],
+        },
+        {
+            // one asterisk at start, one in middle, one at end
+            glob: '*a*b*',
+            esQuery: { contentLengthGt: 0, },
+            pathRegex: '^.*a.*b.*$',
+            matchingPaths: [
+                'ab',
+                'ab-',
+                '-ab',
+                '-ab-',
+                '---ab---',
+                '---a----b---',
+                'a-b',
+                '-a-b-',
+            ],
+            nonMatchingPaths: [
+                'ac',
+            ],
+        },
+        {
+            // multiple asterisks not at the start or end
             glob: '/foo:*/bar:*.json',
             esQuery: { pathStartsWith: '/foo:', pathEndsWith: '.json', contentLengthGt: 0, },
             pathRegex: '^/foo:.*/bar:.*\\.json$',

@@ -5,17 +5,12 @@ import {
     Document,
     IStorage,
     IStorageAsync,
-    Path,
     Query,
-    QueryForForget,
     ValidationError,
     ValidatorEs4,
     WriteResult,
-    documentIsExpired,
     isErr,
-    queryMatchesDoc,
     sha256base32,
-    validateQuery,
 } from 'earthstar';
 
 //================================================================================
@@ -90,10 +85,10 @@ let escapeRegExp = (s: string) => {
 }
 
 export let validateGraphQuery = (graphQuery: GraphQuery): ValidationError | null => {
-    // Check validitiy of inputs
+    // Check validity of inputs
     // source and dest can be any strings
 
-    let { source, dest, owner, kind } = graphQuery;
+    let { owner, kind } = graphQuery;
 
     // owner must be 'common' or a valid author address
     if (owner !== undefined && owner !== 'common') {
@@ -116,13 +111,17 @@ export let validateGraphQuery = (graphQuery: GraphQuery): ValidationError | null
     return null;
 }
 
-export let _graphQueryToGlob = (graphQuery: GraphQuery): string => {
-    let source = graphQuery.source ?? '*'
-    let owner = graphQuery.owner ?? '*'
-    if (owner.startsWith('@')) { owner = '~' + owner; }
-    let kind = graphQuery.kind ?? '*'
-    let dest = graphQuery.dest ?? '*'
 
+export let _graphQueryToGlob = ({
+    // Represent undefined path segments as splats for pattern matching later
+    source = '*',
+    owner = '*',
+    kind = '*',
+    dest = '*'
+}: GraphQuery): string => {
+    // If the owner is a author's public address, we want to prefix with a tilde so the resulting path is in fact 'owned' by that author.
+    if (owner.startsWith('@')) { owner = '~' + owner; }
+    
     let sourceHash = source === '*' ? '*' : sha256base32(source);
     let destHash = dest === '*' ? '*' : sha256base32(dest);
 
@@ -147,17 +146,38 @@ export let _globToEarthstarQueryAndPathRegex = (glob: string): { query: Query, p
     let pathRegex = null;
 
     if (parts.length === 1) {
+        // The glob has no wildcards, and the path is completely defined.
         query = {
             ...query,
-            path: glob
+            path: glob,
         };
     } else {
+        // The glob has wildcard(s) within it.
         query = {
             ...query,
             pathStartsWith: parts[0],
             pathEndsWith: parts[parts.length - 1],
         };
+        // Make a regex to enforece the glob.
         pathRegex = '^' + parts.map(escapeRegExp).join('.*') + '$';
+
+        // Optimize some special cases:
+
+        // If the glob starts or ends with a wildcard, the first or last part
+        // will just be empty strings
+        // and we can trim them from the query.
+        if (query.pathStartsWith === '') {
+            delete query.pathStartsWith;
+        }
+        if (query.pathEndsWith === '') {
+            delete query.pathEndsWith;
+        }
+
+        // Special case for '*foo' or 'foo*' -- no regex is needed,
+        // we can just rely on pathStartsWith or pathEndsWith to do all the work.
+        if (parts.length === 2 && (parts[0] === '' || parts[parts.length-1] === '')) {
+            pathRegex = null;
+        }
     }
 
     return { query, pathRegex };
@@ -173,14 +193,15 @@ export let _globToEarthstarQueryAndPathRegex = (glob: string): { query: Query, p
 
 // TODO: mix in the extra query (before or after?)
 
-export let findEdges = (storage: IStorage, graphQuery: GraphQuery, extraEarthstarQuery?: Query): Document[] | ValidationError => {
+export let findEdges = (storage: IStorage, graphQuery: GraphQuery, extraEarthstarQuery: Query = {}): Document[] | ValidationError => {
     let err = validateGraphQuery(graphQuery);
     if (isErr(err)) { return err; }
 
     let glob = _graphQueryToGlob(graphQuery);
     let { query, pathRegex } = _globToEarthstarQueryAndPathRegex(glob);
-
-    let docs = storage.documents(query);
+    
+    // Spread the extra query last as its options should be considered as overrides, and the regex will filter our false positives from passing a different pathStartsWith / pathEndsWith anyway.
+    let docs = storage.documents({...query, ...extraEarthstarQuery});
     if (pathRegex != null) {
         let re = new RegExp(pathRegex);
         docs = docs.filter(doc => re.test(doc.path));
@@ -189,14 +210,15 @@ export let findEdges = (storage: IStorage, graphQuery: GraphQuery, extraEarthsta
 }
 
 // same as above but async
-export let findEdgesAsync = async (storage: IStorage | IStorageAsync, graphQuery: GraphQuery, extraEarthstarQuery?: Query): Promise<Document[] | ValidationError> => {
+export let findEdgesAsync = async (storage: IStorage | IStorageAsync, graphQuery: GraphQuery, extraEarthstarQuery: Query = {}): Promise<Document[] | ValidationError> => {
     let err = validateGraphQuery(graphQuery);
     if (isErr(err)) { return err; }
 
     let glob = _graphQueryToGlob(graphQuery);
     let { query, pathRegex } = _globToEarthstarQueryAndPathRegex(glob);
 
-    let docs = await storage.documents(query);
+    // Spread the extra query last as its options should be considered as overrides, and the regex will filter our false positives from passing a different pathStartsWith / pathEndsWith anyway.
+    let docs = await storage.documents({...query, ...extraEarthstarQuery});
     if (pathRegex != null) {
         let re = new RegExp(pathRegex);
         docs = docs.filter(doc => re.test(doc.path));
