@@ -26,6 +26,8 @@ import {
 } from '../index';
 
 import t from 'tap';
+import { writer } from 'repl';
+import { getEnabledCategories } from 'trace_events';
 //t.runOnly = true;
 
 let log = console.log;
@@ -70,90 +72,118 @@ let externalUrl = 'http://www.example.com';
 let wikiPath1 = '/wiki/cats.md';
 let wikiPath2 = '/wiki/kittens.md';
 
-let addTestData = async (storage: IStorage): Promise<void> => {
+let makeTestEdges = () => {
+    let edgesByAuthor1: Record<string, EdgeContent> = {};
+    let edgesByAuthor2: Record<string, EdgeContent> = {};
 
     // 1
-    await writeEdge(storage, keypair1, {
+    edgesByAuthor1.one = {
         source: author1,
         kind: 'FOLLOWED',
         dest: author2,
         owner: author1,
-    });
+    };
 
     // 2
-    await writeEdge(storage, keypair1, {
+    edgesByAuthor1.two = {
         source: author1,
         kind: 'AUTHORED',
         dest: blogPath,
         owner: author1,
-    });
+    };
 
     // 3
-    await writeEdge(storage, keypair2, {
+    edgesByAuthor2.three = {
         source: author2,
         kind: 'LIKED',
         dest: blogPath,
         owner: author2,
-    });
+    };
 
     // 4
-    await writeEdge(storage, keypair2, {
+    edgesByAuthor2.four = {
         source: author2,
         kind: 'REACTED',
         dest: blogPath,
         owner: author2,
         data: { reaction: ':)' },
-    });
+    };
 
     // 5
-    await writeEdge(storage, keypair2, {
+    edgesByAuthor2.five = {
         source: author2,
         kind: 'AUTHORED',
         dest: commentPath,
         owner: author2,
-    });
+    };
 
     // 6
-    await writeEdge(storage, keypair2, {
+    edgesByAuthor2.six = {
         source: commentPath,
         kind: 'COMMENTS_ON',
         dest: blogPath,
         owner: author2,
-    });
+    };
 
     // 7
-    await writeEdge(storage, keypair1, {
+    edgesByAuthor1.seven = {
         source: blogPath,
         kind: 'LINKED_TO',
         dest: externalUrl,
         owner: author1,
-    });
+    };
 
     // 8 bidirectional link from both sides:
-    await writeEdge(storage, keypair2, {
+    edgesByAuthor2.eight = {
         source: wikiPath1,
         kind: 'LINKED_TO',
         dest: wikiPath2,
         owner: 'common',
-    });
+    };
 
     // 9 bidirectional link from both sides:
-    await writeEdge(storage, keypair2, {
+    edgesByAuthor2.nine = {
         source: wikiPath2,
         kind: 'LINKED_TO',
         dest: wikiPath1,
         owner: 'common',
-    });
+    };
 
-    // 10 a single non-directed link
+    // 10 a single non-directed link.
+    // In a non-directed link, always put
+    // the smaller source first, for consistency.
     let nodes = [author1, author2];
     nodes.sort();
-    await writeEdge(storage, keypair1, {
-        source: nodes[0],  // smaller first, for consistency
+    edgesByAuthor1.ten = {
+        source: nodes[0],
         kind: '-IS_SAME_PERSON_AS-',
         dest: nodes[1],
         owner: author1,
-    });
+    };
+
+    return { edgesByAuthor1, edgesByAuthor2 };
+}
+
+let TEST_EDGES = makeTestEdges();
+
+let addTestEdges = async (testEdges: Record<string, Record<string, EdgeContent>>, storage: IStorage | IStorageAsync): Promise<boolean> => {
+    let { edgesByAuthor1, edgesByAuthor2 } = testEdges;
+    let success = true;
+    for (let edge of Object.values(edgesByAuthor1)) {
+        let result = await writeEdge(storage, keypair1, edge);
+        if (result !== WriteResult.Accepted) {
+            console.error(result);
+            success = false;
+        }
+    }
+    for (let edge of Object.values(edgesByAuthor2)) {
+        let result = await writeEdge(storage, keypair2, edge);
+        if (result !== WriteResult.Accepted) {
+            console.error(result);
+            success = false;
+        }
+    }
+    return success;
 }
 
 //================================================================================
@@ -161,7 +191,9 @@ let addTestData = async (storage: IStorage): Promise<void> => {
 t.test('writeEdge: basics', async (t) => {
     let storage = new StorageMemory([ValidatorEs4], workspace);
 
-    await addTestData(storage);
+    let writeSuccess = await addTestEdges(TEST_EDGES, storage);
+    t.true(writeSuccess, 'write successful');
+
     let paths = await storage.paths();
     t.same(paths.length, 10, 'expected number of edges in test data; all were written successfully');
 
@@ -257,77 +289,6 @@ t.test('_graphQueryToGlob', async (t) => {
     }
     t.done();
 });
-
-t.test('findEdges', async (t) => {
-    let storage = new StorageMemory([ValidatorEs4], workspace);
-    
-    await addTestData(storage);
-    
-    interface TestCases {
-        name: string,
-        graphQuery: GraphQuery,
-        extraQuery?: Query,
-    }
-    
-    let tests: TestCases[] = [
-        {
-            name: `Source is ${author1}`,
-            graphQuery: {
-                source: author1,
-            },
-        },
-        {
-            name: 'Kind is "REACTED"',
-            graphQuery: {
-                kind: 'REACTED',
-            }
-        },
-        {
-            name: `Destination is ${blogPath}`,
-            graphQuery: {
-                dest: blogPath
-            }
-        },
-        {
-            name: `Owner is ${author2}`,
-            graphQuery: {
-                owner: author2
-            }
-        },
-        {
-            name: 'Kind is REACTED and doc is deleted',
-            graphQuery: {
-                kind: 'REACTED',
-            },
-            extraQuery: {
-                contentLength: 0
-            }
-        }
-    ];
-    
-    const getPaths = (args: TestCases) => {
-        const edges = findEdges(storage, args.graphQuery, args.extraQuery);
-        
-        if (isErr(edges)) {
-            return [];
-        }
-        
-        return edges.map((edge) => edge.path);
-    }
-    
-    
-    // Use snapshots here as the results are long strings with hashes in them
-    tests.forEach((test) => {
-        // cinn says: I disabled snapshot testing for now
-        // since it doesn't work well -- we have different
-        // randomly generated author ids each time.
-        //t.matchSnapshot(getPaths(test), test.name)
-    })
-    
-    storage.close()
-    
-    t.done();
-})
 
 t.test('_globToEarthstarQueryAndPathRegex', async (t) => {
     interface Vector {
@@ -511,3 +472,134 @@ t.test('_globToEarthstarQueryAndPathRegex', async (t) => {
     t.done();
 });
 
+t.test('findEdges', async (t) => {
+    let storage = new StorageMemory([ValidatorEs4], workspace);
+    
+    let writeSuccess = await addTestEdges(TEST_EDGES, storage);
+    t.true(writeSuccess, 'write successful');
+    
+    interface TestCase {
+        desc: string,
+        graphQuery: GraphQuery,
+        extraQuery?: Query,
+        expectedEdges: EdgeContent[],
+    }
+    
+    let testCases: TestCase[] = [
+        {
+            desc: `Source is ${author1.slice(0, 10)}...`,
+            graphQuery: {
+                source: author1,
+            },
+            expectedEdges: [
+                TEST_EDGES.edgesByAuthor1.one,
+                TEST_EDGES.edgesByAuthor1.two,
+                TEST_EDGES.edgesByAuthor1.ten,
+            ],
+        },
+        {
+            desc: 'Kind is "REACTED"',
+            graphQuery: {
+                kind: 'REACTED',
+            },
+            expectedEdges: [
+                TEST_EDGES.edgesByAuthor2.four,
+            ],
+        },
+        {
+            desc: `Destination is ${blogPath}`,
+            graphQuery: {
+                dest: blogPath
+            },
+            expectedEdges: [
+                TEST_EDGES.edgesByAuthor1.two,
+                TEST_EDGES.edgesByAuthor2.three,
+                TEST_EDGES.edgesByAuthor2.four,
+                TEST_EDGES.edgesByAuthor2.six,
+            ],
+        },
+        {
+            desc: `Owner is ${author2}`,
+            graphQuery: {
+                owner: author2
+            },
+            expectedEdges: [
+                TEST_EDGES.edgesByAuthor2.three,
+                TEST_EDGES.edgesByAuthor2.four,
+                TEST_EDGES.edgesByAuthor2.five,
+                TEST_EDGES.edgesByAuthor2.six,
+            ],
+        },
+        {
+            desc: `Owner is "common"`,
+            graphQuery: {
+                owner: 'common',
+            },
+            expectedEdges: [
+                TEST_EDGES.edgesByAuthor2.eight,
+                TEST_EDGES.edgesByAuthor2.nine,
+            ],
+        },
+        {
+            desc: `Query for several things at once`,
+            graphQuery: {
+                source: blogPath,
+                kind: 'LINKED_TO',
+                dest: externalUrl,
+                owner: author1,
+            },
+            expectedEdges: [
+                TEST_EDGES.edgesByAuthor1.seven,
+            ],
+        },
+        {
+            desc: `Query with no results`,
+            graphQuery: {
+                source: 'nothing uses this source',
+            },
+            expectedEdges: [],
+        },
+        {
+            desc: `Empty query returns every edge`,
+            graphQuery: {
+            },
+            expectedEdges:
+                Object.values(TEST_EDGES.edgesByAuthor1).concat(
+                Object.values(TEST_EDGES.edgesByAuthor2)),
+        },
+        /*
+        // TODO: delete a doc so we can test this.
+        {
+            name: 'Kind is REACTED and doc is deleted',
+            graphQuery: {
+                kind: 'REACTED',
+            },
+            // Normally we skip deleted documents.
+            // If we want them, we have to add an extraQuery.
+            extraQuery: {
+                contentLength: 0
+            }
+        }
+        */
+    ];
+    
+    for (let { desc, graphQuery, extraQuery, expectedEdges } of testCases) {
+        log('-------------------- ' + desc);
+        log(JSON.stringify(graphQuery, null, 4));
+        log('  -->');
+
+        let docs = await findEdges(storage, graphQuery, extraQuery);
+        if (isErr(docs)) {
+            t.fail(desc + ': findEdges failed with error: ' + docs);
+            continue;
+        }
+
+        let actualEdges = docs.map(d => JSON.parse(d.content)) as any[] as EdgeContent[];
+        log(actualEdges.map(edge => JSON.stringify(edge, null, 4)).join('\n'));
+        t.same(new Set(actualEdges), new Set(expectedEdges), desc + ': edges should match');
+    }
+
+    storage.close()
+    
+    t.done();
+})
