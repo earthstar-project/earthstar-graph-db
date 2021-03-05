@@ -2,7 +2,8 @@
   "name": "earthstar-graph-db",
   "version": "0.0.3",
   "description": "A graph database layer on top of Earthstar.",
-  "main": "index.js",
+  "main": "build/index.js",
+  "types": "build/index.d.ts",
   "repository": "git@github.com:earthstar-project/earthstar-graph-db.git",
   "author": "Cinnamon <cinnamon_bun_github@fastmail.com>",
   "license": "ISC",
@@ -15,7 +16,6 @@
     "prepublishOnly": "npm run clean && npm run build"
   },
   "devDependencies": {
-    "@types/node": "^14.14.25",
     "@types/tap": "^14.10.2",
     "earthstar": "^6.3.1",
     "tap": "^14.11.0",
