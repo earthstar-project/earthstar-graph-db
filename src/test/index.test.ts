@@ -588,7 +588,7 @@ t.test('findEdges', async (t) => {
         log(JSON.stringify(graphQuery, null, 4));
         log('  -->');
 
-        let docs = await findEdges(storage, graphQuery, extraQuery);
+        let docs = findEdges(storage, graphQuery, extraQuery);
         if (isErr(docs)) {
             t.fail(desc + ': findEdges failed with error: ' + docs);
             continue;
@@ -603,3 +603,5 @@ t.test('findEdges', async (t) => {
     
     t.done();
 })
+
+// TODO: test findEdgesAsync

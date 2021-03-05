@@ -88,7 +88,11 @@ let myGraphQuery: GraphQuery = {
 // do the query to find the edges
 let matchingEdgeDocuments = findEdges(myStorage, myGraphQuery);
 
+// if you have an async storage, do this instead
+// let matchingEdgeDocuments = await findEdgesAsync(myAsyncStorage, myGraphQuery);
+
 // parse the edge documents' content to get the EdgeContent data
+if (isErr(matchingEdgeDocuments)) { throw "oops"; }
 for (let edgeDoc of matchingEdgeDocs) {
     let edgeContent: EdgeContent = JSON.parse(edgeDoc.content);
     console.log(`suzy likes ${edgeContent.dest}`);
