@@ -10,7 +10,6 @@ import {
     generateAuthorKeypair,
     isErr,
     notErr,
-    queryMatchesDoc,
     sha256base32,
 } from 'earthstar';
 import {
@@ -18,16 +17,13 @@ import {
     GRAPH_PATH_PREFIX,
     GraphQuery,
     _globToEarthstarQueryAndPathRegex,
+    _graphQueryToGlob,
     findEdges,
-    findEdgesAsync,
     validateGraphQuery,
     writeEdge,
-    _graphQueryToGlob,
 } from '../index';
 
 import t from 'tap';
-import { writer } from 'repl';
-import { getEnabledCategories } from 'trace_events';
 //t.runOnly = true;
 
 let log = console.log;
