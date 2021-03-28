@@ -86,7 +86,7 @@ let myGraphQuery: GraphQuery = {
 };
 
 // do the query to find the edges
-let matchingEdgeDocuments = findEdges(myStorage, myGraphQuery);
+let matchingEdgeDocuments = findEdgesSync(myStorage, myGraphQuery);
 
 // if you have an async storage, do this instead
 // let matchingEdgeDocuments = await findEdgesAsync(myAsyncStorage, myGraphQuery);
