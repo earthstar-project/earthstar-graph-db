@@ -1,7 +1,6 @@
 import {
     AuthorAddress,
     AuthorKeypair,
-    DocToSet,
     Document,
     IStorage,
     IStorageAsync,
@@ -9,7 +8,10 @@ import {
     ValidationError,
     ValidatorEs4,
     WriteResult,
+    insertVariablesIntoTemplate,
     isErr,
+    queryByTemplateAsync,
+    queryByTemplateSync,
     sha256base32,
 } from 'earthstar';
 
@@ -55,48 +57,101 @@ and there can only be one edge with those 4 particular properties.
 //    total path length = 214 + length of EDGE_KIND
 //    The earthstar path length limit is 512 characters, so we have plenty of room
 
-export const GRAPH_PATH_PREFIX: string = '/graphdb-v1/edge'
+//================================================================================
+// TYPES
 
 // You look up edges with GraphQuery objects.
 // Specify each of these options to narrow down your query.
 // If no options are set at all, this returns all edges in the workspace.
-export interface GraphQuery {
-    source?: string,
-    dest?: string,
-    owner?: AuthorAddress | 'common',
-    kind?: string,
+
+/*
+ * A GraphEdge completely specifies all the properties of an edge,
+ *  except for its user-provided data content.
+ */
+export interface GraphEdge {
+    appName: string,  // name of your app.  no leading slash or trailing slash.  internal slashes ok.
+    source: string,  // we will hash this for you to make the path
+    dest: string,  // we will hash this for you to make the path
+    owner: AuthorAddress | 'common',  // author address should not include tilde
+    kind: string,
 }
 
-// This is stored in the Earthstar document.content for the edge.
-export interface EdgeContent {
-    source: string,
-    dest: string,
+/*
+ * A GraphQuery is a subset of a GraphEdge -- just the properties you want to
+ * specify in a search.  The ones you leave out will turn into '*' wildcards
+ * in the search.
+ */
+export type GraphQuery = Partial<GraphEdge>;
+
+/*
+ * EdgeContent is a GraphEdge plus its optional user-provided data content.
+ * This is what's stored in the actual document content for the edge.
+ * There's a bit of redundancy between this content and the path itself,
+ *  but there are differences too (this stores source and dest, and the
+ *  path stores sourceHash and destHash).
+ */
+export interface GraphEdgeContent extends GraphEdge {
+    // everything from GraphEdge, plus:
+    data?: any;  // any user-provided data about this edge that can be JSON serialized
+}
+
+/*
+ * The variables used to construct an Earthstar path for an edge.
+ * Similar to a GraphEdge, but with hashed versions of source and dest.
+ */
+export interface GraphEdgeTempalateVars {
+    appName: string,
+    sourceHash: string,
     owner: string,
     kind: string,
-    data?: any;  // any user-provided data about this edge
+    destHash: string,
+}
+
+/*
+ * The path template that's used for every edge document.
+ */
+const GRAPH_PATH_TEMPLATE = '/{appName}/graph/v1/edge/source:{sourceHash}/owner:{owner}/kind:{kind}/dest:{destHash}.json';
+
+/*
+ * Missing properties in a graph query get filled in with these defaults.
+ */
+const DEFAULT_GRAPH_QUERY: GraphQuery = {
+    appName: '*',
+    source: '*',
+    owner: '*',
+    kind: '*',
+    dest: '*'
 }
 
 //================================================================================
-// NEW STUFF
-
-let escapeRegExp = (s: string) => {
-    // escape a string so it's safe to use in a regular expression
-    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
-}
 
 export let validateGraphQuery = (graphQuery: GraphQuery): ValidationError | null => {
-    // Check validity of inputs
-    // source and dest can be any strings
+    // Make sure the query contains valid values.
 
-    let { owner, kind } = graphQuery;
+    // source and dest can be any strings, since we hash them later.
+    let { appName, owner, kind } = graphQuery;
 
-    // owner must be 'common' or a valid author address
+    if (appName !== undefined) {
+        if (appName.startsWith('/')) {
+            return new ValidationError(`appName "${appName}" should not start with a slash`);
+        }
+        if (appName.endsWith('/')) {
+            return new ValidationError(`appName "${appName}" should not end with a slash`);
+        }
+        let appNameIsValidInPath = ValidatorEs4._checkPathIsValid('/' + appName);
+        if (isErr(appNameIsValidInPath)) {
+            return new ValidationError(`appName "${appName}" is not valid in an Earthstar path`);
+        }
+    }
+
+    // owner must be 'common' or a valid author address not starting with '~'
     if (owner !== undefined && owner !== 'common') {
         let parsedAuthor = ValidatorEs4.parseAuthorAddress(owner);
         if (isErr(parsedAuthor)) {
-            return new ValidationError('if set, graphQuery.owner must be "common" or an author address like "@suzy.jawofiaj...."');
+            return new ValidationError('if set, graphQuery.owner must be "common" or an author address like "@suzy.jawofiaj...." with no tilde');
         }
     }
+
     // kind must be a valid earthstar path segment
     if (kind !== undefined) {
         if (kind.indexOf('/') !== -1) {
@@ -104,147 +159,154 @@ export let validateGraphQuery = (graphQuery: GraphQuery): ValidationError | null
         }
         let kindIsValid = ValidatorEs4._checkPathIsValid('/' + kind);
         if (isErr(kindIsValid)) {
-            return new ValidationError(`edge kind "${kind}" is not valid in an earthstar path`);
+            return new ValidationError(`edge kind "${kind}" is not valid as an earthstar path segment`);
         }
     }
 
     return null;
 }
 
+/*
+ * Given a graph query, convert it to template vars to plug into the GRAPH_PATH_TEMPLATE.
+ * This is where hashing of source and dest happens.
+ */
+export let _graphQueryToTemplateVars = (query: GraphQuery): GraphEdgeTempalateVars => {
+    let fullQuery: GraphEdge = { ...DEFAULT_GRAPH_QUERY, ...query } as GraphEdge;
+    let { appName, source, owner, kind, dest } = fullQuery;
 
-export let _graphQueryToGlob = ({
-    // Represent undefined path segments as splats for pattern matching later
-    source = '*',
-    owner = '*',
-    kind = '*',
-    dest = '*'
-}: GraphQuery): string => {
-    // If the owner is a author's public address, we want to prefix with a tilde so the resulting path is in fact 'owned' by that author.
-    if (owner.startsWith('@')) { owner = '~' + owner; }
-    
-    let sourceHash = source === '*' ? '*' : sha256base32(source);
-    let destHash = dest === '*' ? '*' : sha256base32(dest);
-
-    let glob = `${GRAPH_PATH_PREFIX}/source:${sourceHash}/owner:${owner}/kind:${kind}/dest:${destHash}.json`
-
-    return glob;
-}
-
-export let _globToEarthstarQueryAndPathRegex = (glob: string): { query: Query, pathRegex: string | null } => {
-    // Given a glob string, return:
-    //    - an earthstar Query
-    //    - and a regular expression (as a plain string, not a RegExp instance).
-    // After this you can run the query yourself and apply the regex
-    // as a filter to the paths of the resulting documents,
-    // to get only the documents whose paths match the glob.
-    // The regex will be null if it's not needed.
-    // The glob string only supports '*' as a wildcard, no other
-    // special wildcards like '?' or '**' as in Bash.
-
-    let parts = glob.split('*');
-    let query: Query = { contentLengthGt: 0 };  // skip deleted edges
-    let pathRegex = null;
-
-    if (parts.length === 1) {
-        // The glob has no wildcards, and the path is completely defined.
-        query = {
-            ...query,
-            path: glob,
-        };
-    } else {
-        // The glob has wildcard(s) within it.
-        query = {
-            ...query,
-            pathStartsWith: parts[0],
-            pathEndsWith: parts[parts.length - 1],
-        };
-        // Make a regex to enforece the glob.
-        pathRegex = '^' + parts.map(escapeRegExp).join('.*') + '$';
-
-        // Optimize some special cases:
-
-        // If the glob starts or ends with a wildcard, the first or last part
-        // will just be empty strings
-        // and we can trim them from the query.
-        if (query.pathStartsWith === '') {
-            delete query.pathStartsWith;
-        }
-        if (query.pathEndsWith === '') {
-            delete query.pathEndsWith;
-        }
-
-        // Special case for '*foo' or 'foo*' -- no regex is needed,
-        // we can just rely on pathStartsWith or pathEndsWith to do all the work.
-        if (parts.length === 2 && (parts[0] === '' || parts[parts.length-1] === '')) {
-            pathRegex = null;
-        }
-    }
-
-    return { query, pathRegex };
-}
-
+    return {
+        appName,
+        sourceHash: source === '*' ? '*' : sha256base32(source as string),
+        owner: owner.startsWith('@') ? '~' + owner : owner,
+        kind,
+        destHash: dest === '*' ? '*' : sha256base32(dest as string),
+    };
+};
 
 //================================================================================
-// Run a graph query on a storage.
-// This will return an array of documents; you will need to 
-// parse their document.content as JSON to get an EdgeContent object
-// in order to read the original source and dest, kind, owner, and user-provided data.
-// See the EdgeContent type, above.
+// QUERYING
 
-// TODO: mix in the extra query (before or after?)
-
+/*
+ * Run a graph query on a storage.
+ * This will return an array of documents; you will need to 
+ *  parse their document.content as JSON to get a GraphEdgeContent object
+ *  in order to read the original source and dest, kind, owner, and user-provided data if it's there.
+ * extraEarthstarQuery gets mixed in after the graphQuery and overrides it -- you probably don't
+ *  want to override the path, pathStartsWith, or pathEndsWith values, but anything else is ok to override.
+ * For example, to skip deleted edges set extraEarthstarQuery to { contentLenghtGt: 0 }.
+ */
 export let findEdges = (storage: IStorage, graphQuery: GraphQuery, extraEarthstarQuery: Query = {}): Document[] | ValidationError => {
     let err = validateGraphQuery(graphQuery);
     if (isErr(err)) { return err; }
 
-    let glob = _graphQueryToGlob(graphQuery);
-    let { query, pathRegex } = _globToEarthstarQueryAndPathRegex(glob);
-    
-    // Spread the extra query last as its options should be considered as overrides, and the regex will filter our false positives from passing a different pathStartsWith / pathEndsWith anyway.
-    let docs = storage.documents({...query, ...extraEarthstarQuery});
-    if (pathRegex != null) {
-        let re = new RegExp(pathRegex);
-        docs = docs.filter(doc => re.test(doc.path));
-    }
-    return docs;
+    // inject the vars and stars into the template.
+    // every variable in the template will get replaced with a value or a star.
+    let templateVars = _graphQueryToTemplateVars(graphQuery);
+    let templateForSearching = insertVariablesIntoTemplate(templateVars as any, GRAPH_PATH_TEMPLATE);
+
+    return queryByTemplateSync(storage, templateForSearching, extraEarthstarQuery);
 }
 
-// same as above but async
+/*
+ * Async version of findEdges
+ */
 export let findEdgesAsync = async (storage: IStorage | IStorageAsync, graphQuery: GraphQuery, extraEarthstarQuery: Query = {}): Promise<Document[] | ValidationError> => {
     let err = validateGraphQuery(graphQuery);
     if (isErr(err)) { return err; }
 
-    let glob = _graphQueryToGlob(graphQuery);
-    let { query, pathRegex } = _globToEarthstarQueryAndPathRegex(glob);
+    // inject the vars and stars into the template.
+    // every variable in the template will get replaced with a value or a star.
+    let templateVars = _graphQueryToTemplateVars(graphQuery);
+    let templateForSearching = insertVariablesIntoTemplate(templateVars as any, GRAPH_PATH_TEMPLATE);
 
-    // Spread the extra query last as its options should be considered as overrides, and the regex will filter our false positives from passing a different pathStartsWith / pathEndsWith anyway.
-    let docs = await storage.documents({...query, ...extraEarthstarQuery});
-    if (pathRegex != null) {
-        let re = new RegExp(pathRegex);
-        docs = docs.filter(doc => re.test(doc.path));
-    }
-    return docs;
+    return await queryByTemplateAsync(storage, templateForSearching, extraEarthstarQuery);
 }
 
 //================================================================================
 // WRITING EDGES
 
-// create or overwrite an edge.
-export let writeEdge = async (storage: IStorage | IStorageAsync, authorKeypair: AuthorKeypair, edge: EdgeContent): Promise<ValidationError | WriteResult> => {
-    let sourceHash = sha256base32(edge.source);
-    let destHash = sha256base32(edge.dest);
-    let ownerWithTilde = edge.owner === 'common' ? 'common' : '~' + edge.owner;
-    let path = `${GRAPH_PATH_PREFIX}/source:${sourceHash}/owner:${ownerWithTilde}/kind:${edge.kind}/dest:${destHash}.json`
-    let docToSet: DocToSet = {
+/*
+ * Create or overwrite an edge.
+ * data is optional and should be any JSON-serializable data that will be stored along
+ *  with the edge content.
+ */
+export let writeEdgeSync = (storage: IStorage, authorKeypair: AuthorKeypair, edge: GraphEdge, data?: any): ValidationError | WriteResult => {
+    // edge is a GraphEdge, not a GraphQuery, so it has every field present.
+    // every variable in the template will get replaced with a value, no stars or {var}s will be left.
+    let templateVars = _graphQueryToTemplateVars(edge);
+    let path = insertVariablesIntoTemplate(templateVars as any, GRAPH_PATH_TEMPLATE);
+
+    let content: GraphEdgeContent = edge;
+    if (data !== undefined) { content.data = data; }
+
+    let setResult = storage.set(authorKeypair, {
         format: 'es.4',
-        path: path,
-        content: JSON.stringify(edge),
-    };
-    let setResult = await storage.set(authorKeypair, docToSet);
+        path,
+        content: JSON.stringify(content),
+    });
     //if (setResult !== WriteResult.Accepted) {
     //    console.warn(setResult);
     //}
     return setResult;
 }
 
-// TODO: deleteEdge
+/*
+ * Async version of writeEdge.
+ */
+export let writeEdgeAsync = async (storage: IStorage | IStorageAsync, authorKeypair: AuthorKeypair, edge: GraphEdge, data?: any): Promise<ValidationError | WriteResult> => {
+    // edge is a GraphEdge, not a GraphQuery, so it has every field present.
+    // every variable in the template will get replaced with a value, no stars or {var}s will be left.
+    let templateVars = _graphQueryToTemplateVars(edge);
+    let path = insertVariablesIntoTemplate(templateVars as any, GRAPH_PATH_TEMPLATE);
+
+    let content: GraphEdgeContent = edge;
+    if (data !== undefined) { content.data = data; }
+
+    let setResult = storage.set(authorKeypair, {
+        format: 'es.4',
+        path,
+        content: JSON.stringify(content),
+    });
+    //if (setResult !== WriteResult.Accepted) {
+    //    console.warn(setResult);
+    //}
+    return setResult;
+}
+
+/*
+ * Delete an edge by overwriting it with a blank document
+ */
+export let deleteEdgeSync = (storage: IStorage, authorKeypair: AuthorKeypair, edge: GraphEdge): ValidationError | WriteResult => {
+    // edge is a GraphEdge, not a GraphQuery, so it has every field present.
+    // every variable in the template will get replaced with a value, no stars or {var}s will be left.
+    let templateVars = _graphQueryToTemplateVars(edge);
+    let path = insertVariablesIntoTemplate(templateVars as any, GRAPH_PATH_TEMPLATE);
+    let setResult = storage.set(authorKeypair, {
+        format: 'es.4',
+        path,
+        content: '',
+    });
+    //if (setResult !== WriteResult.Accepted) {
+    //    console.warn(setResult);
+    //}
+    return setResult;
+};
+
+/*
+ * Async version of deleteEdge.
+ */
+export let deleteEdgeAsync = async (storage: IStorage | IStorageAsync, authorKeypair: AuthorKeypair, edge: GraphEdge): Promise<ValidationError | WriteResult> => {
+    // edge is a GraphEdge, not a GraphQuery, so it has every field present.
+    // every variable in the template will get replaced with a value, no stars or {var}s will be left.
+    let templateVars = _graphQueryToTemplateVars(edge);
+    let path = insertVariablesIntoTemplate(templateVars as any, GRAPH_PATH_TEMPLATE);
+    let setResult = await storage.set(authorKeypair, {
+        format: 'es.4',
+        path,
+        content: '',
+    });
+    //if (setResult !== WriteResult.Accepted) {
+    //    console.warn(setResult);
+    //}
+    return setResult;
+};
