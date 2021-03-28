@@ -18,7 +18,6 @@ import {
 //================================================================================
 
 /*
-
 A graph database.  Each edge is stored as a separate Earthstar document.
 The "nodes" of the graph are any strings, usually Earthtar paths, but can also
 be external URLs or author addresses.
@@ -73,7 +72,7 @@ export interface GraphEdge {
     source: string,  // we will hash this for you to make the path
     dest: string,  // we will hash this for you to make the path
     owner: AuthorAddress | 'common',  // author address should not include tilde
-    kind: string,
+    kind: string,  // what flavor of edge is this?  what does it mean?
 }
 
 /*
@@ -110,7 +109,7 @@ export interface GraphEdgeTempalateVars {
 /*
  * The path template that's used for every edge document.
  */
-const GRAPH_PATH_TEMPLATE = '/{appName}/graph/v1/edge/source:{sourceHash}/owner:{owner}/kind:{kind}/dest:{destHash}.json';
+const GRAPH_PATH_TEMPLATE = '/{appName}/graphdb/v1/edge/source:{sourceHash}/owner:{owner}/kind:{kind}/dest:{destHash}.json';
 
 /*
  * Missing properties in a graph query get filled in with these defaults.
