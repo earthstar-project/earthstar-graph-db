@@ -14,7 +14,7 @@ import {
 import {
     GraphEdgeContent,
     GraphQuery,
-    findEdges,
+    findEdgesSync,
     validateGraphQuery,
     writeEdgeAsync,
     deleteEdgeAsync,
@@ -398,13 +398,18 @@ t.test('findEdges', async (t) => {
                 }),
         },
     ];
-    
+   
+    let err = findEdgesSync(storage, {owner: 'not-a-valid-owner'});
+    t.true(err instanceof ValidationError, 'findEdges checks queries for validatione errors');
+    let err2 = findEdgesSync(storage, {appName: '/////'});
+    t.true(err2 instanceof ValidationError, 'findEdges checks queries for validatione errors');
+
     for (let { desc, graphQuery, extraQuery, expectedEdges } of testCases) {
         //log('-------------------- ' + desc);
         //log(JSON.stringify(graphQuery, null, 4));
         //log('  -->');
 
-        let docs = findEdges(storage, graphQuery, extraQuery);
+        let docs = findEdgesSync(storage, graphQuery, extraQuery);
         if (isErr(docs)) {
             t.fail(desc + ': findEdges failed with error: ' + docs);
             continue;

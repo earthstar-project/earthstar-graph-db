@@ -195,7 +195,7 @@ export let _graphQueryToTemplateVars = (query: GraphQuery): GraphEdgeTempalateVa
  *  want to override the path, pathStartsWith, or pathEndsWith values, but anything else is ok to override.
  * For example, to skip deleted edges set extraEarthstarQuery to { contentLenghtGt: 0 }.
  */
-export let findEdges = (storage: IStorage, graphQuery: GraphQuery, extraEarthstarQuery: Query = {}): Document[] | ValidationError => {
+export let findEdgesSync = (storage: IStorage, graphQuery: GraphQuery, extraEarthstarQuery: Query = {}): Document[] | ValidationError => {
     let err = validateGraphQuery(graphQuery);
     if (isErr(err)) { return err; }
 
@@ -210,6 +210,7 @@ export let findEdges = (storage: IStorage, graphQuery: GraphQuery, extraEarthsta
 /*
  * Async version of findEdges
  */
+/* istanbul ignore next */
 export let findEdgesAsync = async (storage: IStorage | IStorageAsync, graphQuery: GraphQuery, extraEarthstarQuery: Query = {}): Promise<Document[] | ValidationError> => {
     let err = validateGraphQuery(graphQuery);
     if (isErr(err)) { return err; }
@@ -230,6 +231,7 @@ export let findEdgesAsync = async (storage: IStorage | IStorageAsync, graphQuery
  * data is optional and should be any JSON-serializable data that will be stored along
  *  with the edge content.
  */
+/* istanbul ignore next */
 export let writeEdgeSync = (storage: IStorage, authorKeypair: AuthorKeypair, edge: GraphEdge, data?: any): ValidationError | WriteResult => {
     // edge is a GraphEdge, not a GraphQuery, so it has every field present.
     // every variable in the template will get replaced with a value, no stars or {var}s will be left.
@@ -276,6 +278,7 @@ export let writeEdgeAsync = async (storage: IStorage | IStorageAsync, authorKeyp
 /*
  * Delete an edge by overwriting it with a blank document
  */
+/* istanbul ignore next */
 export let deleteEdgeSync = (storage: IStorage, authorKeypair: AuthorKeypair, edge: GraphEdge): ValidationError | WriteResult => {
     // edge is a GraphEdge, not a GraphQuery, so it has every field present.
     // every variable in the template will get replaced with a value, no stars or {var}s will be left.
